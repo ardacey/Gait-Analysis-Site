@@ -11,6 +11,20 @@ node_modules
 dist
 dist-ssr
 *.local
+coverage
+*.pid
+*.seed
+*.pid.lock
+.cache
+.eslintcache
+.pnpm-store
+.npmrc
+.env
+.env.*
+!.env.example
+.vercel
+.netlify
+.turbo
 
 # Editor directories and files
 .vscode/*
