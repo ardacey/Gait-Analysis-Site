@@ -1,6 +1,6 @@
 // src/features/auth/AuthScreen.tsx
 import { Button } from '../../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card'
 import { Activity, User, Stethoscope, CheckCircle2, Lock } from 'lucide-react'
 import type { UserRole, AuthMode } from '../../types'
 
@@ -26,13 +26,13 @@ export function AuthScreen({
 }: AuthScreenProps) {
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-      <Card className="w-full max-w-md shadow-2xl border-0">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-blue-50 px-4">
+      <Card className="w-full max-w-lg shadow-2xl border-0">
         {/* Sekmeler */}
         <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-t-xl">
           <button
             onClick={() => { setAuthMode('login'); setDoctorCode(''); }}
-            className={`py-3 text-sm font-semibold rounded-lg transition-all ${
+            className={`px-2 py-3 text-sm font-semibold rounded-lg transition-all ${
               authMode === 'login' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -40,7 +40,7 @@ export function AuthScreen({
           </button>
           <button
             onClick={() => { setAuthMode('register'); setDoctorCode(''); }}
-            className={`py-3 text-sm font-semibold rounded-lg transition-all ${
+            className={`px-2 py-3 text-sm font-semibold rounded-lg transition-all ${
               authMode === 'register' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -145,9 +145,6 @@ export function AuthScreen({
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="bg-slate-50 p-4 rounded-b-xl flex justify-center">
-          <p className="text-xs text-slate-400">Gait Analysis v1.0 • Güvenli Giriş</p>
-        </CardFooter>
       </Card>
     </div>
   )

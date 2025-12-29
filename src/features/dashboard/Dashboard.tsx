@@ -56,7 +56,7 @@ export function Dashboard({
 
         {/* YÜKLEME ALANI (Sadece Hasta) */}
         {role === 'patient' && (
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="bg-linear-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="space-y-2 text-center sm:text-left">
               <h2 className="text-2xl font-bold">Yeni Analiz Başlat</h2>
               <p className="text-blue-100 max-w-md">Yürüyüş analizi için videonuzu buraya yükleyin. Doktorunuz en kısa sürede inceleyecektir.</p>

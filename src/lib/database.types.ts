@@ -20,6 +20,7 @@ export type Database = {
           username?: string
           role?: 'patient' | 'doctor'
         }
+        Relationships: []
       }
       videos: {
         Row: {
@@ -46,6 +47,7 @@ export type Database = {
           file_path?: string
           file_url?: string | null
         }
+        Relationships: []
       }
     }
     Views: Record<string, never>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import supabase, { supabaseBucket } from '../lib/supabaseClient'
+import type { Database } from '../lib/database.types'
 import type { UserRole, VideoRecord } from '../types'
 
 interface UseVideosOptions {
@@ -16,12 +18,13 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
   const [status, setStatus] = useState('')
   const [activeVideo, setActiveVideo] = useState<string | null>(null)
   const [videoToDelete, setVideoToDelete] = useState<VideoRecord | null>(null)
+  const client = supabase as SupabaseClient<Database> | null
 
   const fetchVideos = useCallback(async () => {
-    if (!supabase) return
+    if (!client) return
     setLoadingVideos(true)
 
-    let query = supabase.from('videos').select('*').order('created_at', { ascending: false })
+    let query = client.from('videos').select('*').order('created_at', { ascending: false })
 
     if (role === 'patient') {
       query = query.eq('user_name', username)
@@ -31,10 +34,10 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
     if (error) {
       console.error(error)
     } else {
-      setVideos(data || [])
+      setVideos((data || []) as VideoRecord[])
     }
     setLoadingVideos(false)
-  }, [role, username])
+  }, [client, role, username])
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -44,7 +47,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
 
   const handleUploadFiles = useCallback(
     async (files: File[]) => {
-      if (!supabase || !supabaseBucket) return
+      if (!client || !supabaseBucket) return
       const MAX_SIZE_MB = 100
       for (const file of files) {
         if (file.size > MAX_SIZE_MB * 1024 * 1024) {
@@ -62,22 +65,24 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
           const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
           const filePath = `${username}/${timestamp}-${safeName}`
 
-          const { error: uploadError } = await supabase.storage
+          const { error: uploadError } = await client.storage
             .from(supabaseBucket)
             .upload(filePath, file, { contentType: file.type || 'video/mp4' })
 
           if (uploadError) throw uploadError
 
-          const { data: publicUrlData } = supabase.storage
+          const { data: publicUrlData } = client.storage
             .from(supabaseBucket)
             .getPublicUrl(filePath)
 
-          const { error: dbError } = await supabase.from('videos').insert({
+          const insertPayload: Database['public']['Tables']['videos']['Insert'] = {
             user_name: username,
             file_name: file.name,
             file_path: filePath,
             file_url: publicUrlData.publicUrl
-          })
+          }
+
+          const { error: dbError } = await client.from('videos').insert(insertPayload)
 
           if (dbError) throw dbError
           onToast(`${file.name} başarıyla yüklendi.`, 'success')
@@ -91,7 +96,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
       setIsUploading(false)
       setStatus('')
     },
-    [fetchVideos, onToast, username]
+    [client, fetchVideos, onToast, username]
   )
 
   const handleFileChange = useCallback(
@@ -105,10 +110,16 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
   )
 
   const handleDelete = useCallback(async () => {
-    if (!videoToDelete || !supabase || !supabaseBucket) return
+    if (!videoToDelete || !client || !supabaseBucket) return
     try {
-      await supabase.storage.from(supabaseBucket).remove([videoToDelete.file_path])
-      await supabase.from('videos').delete().eq('id', videoToDelete.id)
+      const { data: removedFiles, error: storageError } = await client.storage
+        .from(supabaseBucket)
+        .remove([videoToDelete.file_path])
+      if (storageError || !removedFiles?.length) {
+        onToast('Storage silinemedi. Policy veya path kontrol edin.', 'error')
+        return
+      }
+      await client.from('videos').delete().eq('id', videoToDelete.id)
       setVideos((prev) => prev.filter((video) => video.id !== videoToDelete.id))
       if (activeVideo === videoToDelete.file_url) setActiveVideo(null)
       onToast('Video başarıyla silindi.', 'success')
@@ -118,7 +129,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
     } finally {
       setVideoToDelete(null)
     }
-  }, [activeVideo, onToast, videoToDelete])
+  }, [activeVideo, client, onToast, videoToDelete])
 
   return {
     videos,

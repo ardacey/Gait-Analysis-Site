@@ -1,11 +1,11 @@
 // src/lib/supabaseClient.ts
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
-let supabase: ReturnType<typeof createClient<Database>> | null = null;
+let supabase: SupabaseClient<Database> | null = null
 
 try {
   if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) {
