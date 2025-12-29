@@ -1,8 +1,8 @@
-// src/components/AuthScreen.tsx
-import { Button } from './ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card'
+// src/features/auth/AuthScreen.tsx
+import { Button } from '../../components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../components/ui/card'
 import { Activity, User, Stethoscope, CheckCircle2, Lock } from 'lucide-react'
-import { UserRole, AuthMode } from '../types'
+import type { UserRole, AuthMode } from '../../types'
 
 interface AuthScreenProps {
   authMode: AuthMode

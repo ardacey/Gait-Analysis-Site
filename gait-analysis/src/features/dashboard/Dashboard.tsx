@@ -1,9 +1,9 @@
-// src/components/Dashboard.tsx
+// src/features/dashboard/Dashboard.tsx
 import { useRef } from 'react'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
+import { Button } from '../../components/ui/button'
+import { Card, CardContent } from '../../components/ui/card'
 import { Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus } from 'lucide-react'
-import { UserRole, VideoRecord } from '../types'
+import type { UserRole, VideoRecord } from '../../types'
 
 interface DashboardProps {
   role: UserRole
