@@ -113,9 +113,6 @@ export function AuthScreen({
                   className="flex h-12 w-full rounded-lg border-2 border-emerald-100 bg-emerald-50 px-3 text-sm focus:outline-none focus:border-emerald-500 transition-all"
                   required
                 />
-                <p className="text-[10px] text-emerald-600 font-medium">
-                  * Şifre: MED-2025-ADMIN
-                </p>
               </div>
             )}
 
