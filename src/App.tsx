@@ -1,14 +1,18 @@
 // src/App.tsx
+import { useState } from 'react'
 import { AuthScreen } from './features/auth/AuthScreen'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { ToastStack } from './components/feedback/ToastStack'
 import { VideoPlayerModal } from './components/overlays/VideoPlayerModal'
 import { DeleteConfirmModal } from './components/overlays/DeleteConfirmModal'
+import { AnalysisViewer } from './features/analysis/AnalysisViewer'
 import { useAuth } from './hooks/useAuth'
 import { useToast } from './hooks/useToast'
 import { useVideos } from './hooks/useVideos'
+import type { VideoRecord } from './types'
 
 function App() {
+  const [analysisVideo, setAnalysisVideo] = useState<VideoRecord | null>(null)
   const { toasts, showToast, removeToast } = useToast()
   const {
     authMode,
@@ -35,14 +39,20 @@ function App() {
     videoToDelete,
     setVideoToDelete,
     handleFileChange,
-    handleDelete
+    handleDelete,
   } = useVideos({ username, role, isLoggedIn, onToast: showToast })
 
   return (
     <div className="relative">
       <ToastStack toasts={toasts} onDismiss={removeToast} />
 
-      {activeVideo && <VideoPlayerModal src={activeVideo} onClose={() => setActiveVideo(null)} />}
+      {analysisVideo && (
+        <AnalysisViewer video={analysisVideo} onClose={() => setAnalysisVideo(null)} />
+      )}
+
+      {!analysisVideo && activeVideo && (
+        <VideoPlayerModal src={activeVideo} onClose={() => setActiveVideo(null)} />
+      )}
 
       {videoToDelete && (
         <DeleteConfirmModal onCancel={() => setVideoToDelete(null)} onConfirm={handleDelete} />
@@ -50,7 +60,7 @@ function App() {
 
       {/* MAIN SCREENS */}
       {!isLoggedIn ? (
-        <AuthScreen 
+        <AuthScreen
           authMode={authMode} setAuthMode={setAuthMode}
           username={username} setUsername={setUsername}
           role={role} setRole={setRole}
@@ -58,11 +68,12 @@ function App() {
           handleAuth={handleAuth} authLoading={authLoading}
         />
       ) : (
-        <Dashboard 
+        <Dashboard
           role={role} username={username} setIsLoggedIn={setIsLoggedIn}
           videos={videos} loadingVideos={loadingVideos}
           isUploading={isUploading} status={status} handleFileChange={handleFileChange}
           setActiveVideo={setActiveVideo} confirmDelete={setVideoToDelete}
+          openAnalysis={setAnalysisVideo}
         />
       )}
     </div>

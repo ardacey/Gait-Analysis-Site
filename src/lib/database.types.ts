@@ -30,6 +30,11 @@ export type Database = {
           file_name: string
           file_path: string
           file_url: string | null
+          job_id: string | null
+          job_status: string | null
+          annotated_url: string | null
+          features_url: string | null
+          analysis_url: string | null
         }
         Insert: {
           id?: number
@@ -38,6 +43,11 @@ export type Database = {
           file_name: string
           file_path: string
           file_url: string | null
+          job_id?: string | null
+          job_status?: string | null
+          annotated_url?: string | null
+          features_url?: string | null
+          analysis_url?: string | null
         }
         Update: {
           id?: number
@@ -46,6 +56,11 @@ export type Database = {
           file_name?: string
           file_path?: string
           file_url?: string | null
+          job_id?: string | null
+          job_status?: string | null
+          annotated_url?: string | null
+          features_url?: string | null
+          analysis_url?: string | null
         }
         Relationships: []
       }

@@ -25,6 +25,10 @@ export function useAuth({ onToast }: UseAuthOptions) {
         onToast('Kullanıcı adı en az 3 karakter olmalıdır.', 'error')
         return
       }
+      if (!/^[a-zA-Z0-9_-]+$/.test(username.trim())) {
+        onToast('Kullanıcı adı yalnızca harf, rakam, _ ve - içerebilir.', 'error')
+        return
+      }
 
       if (authMode === 'register' && role === 'doctor' && !doctorCode.trim()) {
         onToast('Doktor kayıt anahtarı zorunludur.', 'error')

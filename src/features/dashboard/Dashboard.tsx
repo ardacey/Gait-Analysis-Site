@@ -2,7 +2,11 @@
 import { useRef } from 'react'
 import { Button } from '../../components/ui/button'
 import { Card, CardContent } from '../../components/ui/card'
-import { Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus } from 'lucide-react'
+import {
+  Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus,
+  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2,
+} from 'lucide-react'
+
 import type { UserRole, VideoRecord } from '../../types'
 
 interface DashboardProps {
@@ -16,20 +20,54 @@ interface DashboardProps {
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   setActiveVideo: (url: string) => void
   confirmDelete: (video: VideoRecord) => void
+  openAnalysis: (video: VideoRecord) => void
+}
+
+function StatusBadge({ jobStatus }: { jobStatus: string | null }) {
+  if (!jobStatus) return null
+  if (jobStatus === 'queued') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-yellow-50 text-yellow-700 border-yellow-200">
+        <Clock className="w-3 h-3" /> Kuyrukta
+      </span>
+    )
+  }
+  if (jobStatus === 'processing') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-blue-50 text-blue-700 border-blue-200">
+        <Loader2 className="w-3 h-3 animate-spin" /> İşleniyor
+      </span>
+    )
+  }
+  if (jobStatus === 'done') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-emerald-50 text-emerald-700 border-emerald-200">
+        <CheckCircle2 className="w-3 h-3" /> Tamamlandı
+      </span>
+    )
+  }
+  if (jobStatus === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-red-50 text-red-700 border-red-200">
+        <XCircle className="w-3 h-3" /> Hata
+      </span>
+    )
+  }
+  return null
 }
 
 export function Dashboard({
   role, username, setIsLoggedIn,
   videos, loadingVideos,
   isUploading, status, handleFileChange,
-  setActiveVideo, confirmDelete
+  setActiveVideo, confirmDelete, openAnalysis,
 }: DashboardProps) {
-  
+
   const inputRef = useRef<HTMLInputElement>(null)
 
   return (
     <div className="min-h-screen bg-slate-50">
-      
+
       {/* HEADER */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -39,7 +77,7 @@ export function Dashboard({
             </div>
             <span className="font-bold text-slate-700 text-lg">Gait Analysis</span>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <div className="text-sm font-bold text-slate-800">{username}</div>
@@ -56,14 +94,14 @@ export function Dashboard({
 
         {/* YÜKLEME ALANI (Sadece Hasta) */}
         {role === 'patient' && (
-          <div className="bg-linear-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="space-y-2 text-center sm:text-left">
               <h2 className="text-2xl font-bold">Yeni Analiz Başlat</h2>
               <p className="text-blue-100 max-w-md">Yürüyüş analizi için videonuzu buraya yükleyin. Doktorunuz en kısa sürede inceleyecektir.</p>
             </div>
             <div className="flex flex-col items-center gap-3 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20">
-              <Button 
-                onClick={() => inputRef.current?.click()} 
+              <Button
+                onClick={() => inputRef.current?.click()}
                 disabled={isUploading}
                 className="bg-white text-blue-600 hover:bg-blue-50 border-0 font-bold px-8 py-6 h-auto text-lg shadow-lg"
               >
@@ -71,7 +109,7 @@ export function Dashboard({
               </Button>
               {status && <span className="text-sm font-medium animate-pulse">{status}</span>}
             </div>
-            <input ref={inputRef} type="file" accept="video/*" onChange={handleFileChange} className="hidden" />
+            <input ref={inputRef} type="file" accept="video/*" onChange={handleFileChange} className="hidden" aria-label="Video dosyası seç" />
           </div>
         )}
 
@@ -85,7 +123,7 @@ export function Dashboard({
           </div>
 
           {loadingVideos ? (
-             <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
+            <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
           ) : videos.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
               <div className="mx-auto bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
@@ -97,45 +135,89 @@ export function Dashboard({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {videos.map((video) => (
-                <Card key={video.id} className="group overflow-hidden hover:shadow-xl transition-all duration-300 border-slate-200">
-                  <div className="h-40 bg-slate-900 flex items-center justify-center relative group-hover:bg-slate-800 transition-colors cursor-pointer" onClick={() => video.file_url && setActiveVideo(video.file_url)}>
-                    <Play className="w-12 h-12 text-white opacity-80 group-hover:scale-110 transition-transform" />
-                    <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">MP4</div>
-                  </div>
-                  
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h4 className="font-bold text-slate-800 truncate w-40" title={video.file_name}>{video.file_name}</h4>
-                        <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
-                           <User className="w-3 h-3" /> <span className="font-medium text-slate-700">{video.user_name}</span>
-                        </div>
-                      </div>
-                      <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">
-                        {new Date(video.created_at).toLocaleDateString('tr-TR')}
-                      </span>
+                  <Card key={video.id} className="group overflow-hidden hover:shadow-xl transition-all duration-300 border-slate-200">
+                    <div
+                      className="h-40 bg-slate-900 flex items-center justify-center relative group-hover:bg-slate-800 transition-colors cursor-pointer"
+                      onClick={() => video.file_url && setActiveVideo(video.file_url)}
+                    >
+                      <Play className="w-12 h-12 text-white opacity-80 group-hover:scale-110 transition-transform" />
+                      <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">MP4</div>
                     </div>
 
-                    <div className="flex gap-2 mt-4">
-                      <Button 
-                        className="flex-1 bg-slate-800 hover:bg-slate-900 text-white" 
-                        size="sm"
-                        onClick={() => video.file_url && setActiveVideo(video.file_url)}
-                      >
-                        <Play className="w-3 h-3 mr-2" /> İncele
-                      </Button>
-                      
-                      <Button 
-                        variant="outline" 
-                        size="icon"
-                        className="text-red-500 border-red-100 hover:bg-red-50 hover:text-red-600"
-                        onClick={() => confirmDelete(video)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="min-w-0 flex-1 mr-2">
+                          <h4 className="font-bold text-slate-800 truncate" title={video.file_name}>{video.file_name}</h4>
+                          <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
+                            <User className="w-3 h-3" /> <span className="font-medium text-slate-700">{video.user_name}</span>
+                          </div>
+                          {video.job_status && (
+                            <div className="mt-1.5">
+                              <StatusBadge jobStatus={video.job_status} />
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full shrink-0">
+                          {new Date(video.created_at).toLocaleDateString('tr-TR')}
+                        </span>
+                      </div>
+
+                      {/* Orijinal video + sil */}
+                      <div className="flex gap-2 mt-4">
+                        <Button
+                          className="flex-1 bg-slate-800 hover:bg-slate-900 text-white"
+                          size="sm"
+                          onClick={() => video.file_url && setActiveVideo(video.file_url)}
+                        >
+                          <Play className="w-3 h-3 mr-2" /> İncele
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="text-red-500 border-red-100 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => confirmDelete(video)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+
+                      {/* Analiz butonları (job başlatılmışsa göster) */}
+                      {video.job_status && (
+                        <>
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                              size="sm"
+                              disabled={video.job_status !== 'done' || !video.annotated_url}
+                              onClick={() => video.annotated_url && setActiveVideo(video.annotated_url)}
+                            >
+                              <BarChart2 className="w-3 h-3 mr-2" /> Analizi İncele
+                            </Button>
+
+                            {video.features_url && (
+                              <a
+                                href={video.features_url}
+                                download
+                                className="inline-flex items-center justify-center gap-1 text-sm px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
+                              >
+                                <Download className="w-3 h-3" /> CSV
+                              </a>
+                            )}
+                          </div>
+
+                          <Button
+                            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
+                            size="sm"
+                            disabled={video.job_status !== 'done'}
+                            onClick={() => openAnalysis(video)}
+                          >
+                            <Activity className="w-3 h-3 mr-2" /> Detaylı Analiz
+                          </Button>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
               ))}
             </div>
           )}
