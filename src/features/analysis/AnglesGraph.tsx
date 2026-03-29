@@ -1,13 +1,12 @@
 import { useMemo, useState, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ResponsiveContainer, Legend, ReferenceArea,
+  ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
 import type { AnalysisFrame } from '../../types'
 
 interface AnglesGraphProps {
   frames: AnalysisFrame[]
-  currentTime: number
   onFrameChange: (idx: number) => void
 }
 
@@ -36,7 +35,7 @@ const PHASE_FILL: Record<string, string> = {
   terminal_stance:  'rgba(139,92,246,0.10)',
 }
 
-export function AnglesGraph({ frames, currentTime, onFrameChange }: AnglesGraphProps) {
+export function AnglesGraph({ frames, onFrameChange }: AnglesGraphProps) {
   const [activeGroup, setActiveGroup] = useState<GroupKey>('Diz')
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
@@ -147,7 +146,7 @@ export function AnglesGraph({ frames, currentTime, onFrameChange }: AnglesGraphP
           <Tooltip
             contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
             labelFormatter={v => `t=${(v as number).toFixed(2)}s`}
-            formatter={(v: number, name: string) => [`${v.toFixed(1)}°`, name]}
+            formatter={(v, name) => [`${Number(v).toFixed(1)}°`, String(name)]}
           />
           <Legend
             wrapperStyle={{ fontSize: 10, paddingTop: 4 }}

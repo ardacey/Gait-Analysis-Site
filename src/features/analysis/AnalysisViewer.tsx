@@ -448,7 +448,6 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
           <div className="shrink-0 border-t border-slate-800 px-4 pt-2 pb-3 relative">
             <AnglesGraph
               frames={data.frames}
-              currentTime={frame.t}
               onFrameChange={n => {
                 frameIdxRef.current = n
                 const f = dataRef.current?.frames[n]
