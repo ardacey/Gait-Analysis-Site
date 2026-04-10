@@ -190,7 +190,7 @@ export function Dashboard({
                               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
                               size="sm"
                               disabled={video.job_status !== 'done' || !video.annotated_url}
-                              onClick={() => video.annotated_url && setActiveVideo(video.annotated_url)}
+                              onClick={() => openAnalysis(video)}
                             >
                               <BarChart2 className="w-3 h-3 mr-2" /> Analizi İncele
                             </Button>

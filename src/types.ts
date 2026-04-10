@@ -37,6 +37,9 @@ export interface AnalysisFrame {
   gait_phase: string
 }
 
+import type { FeedbackItem } from './components/analysis/GaitFeedback'
+export type { FeedbackItem }
+
 export interface AnalysisData {
   meta: { fps: number; frame_count: number; duration: number }
   joint_names: string[]
@@ -44,4 +47,5 @@ export interface AnalysisData {
   frames: AnalysisFrame[]
   timeseries: Record<string, number[]>
   summary: Record<string, number>
+  feedback?: FeedbackItem[]
 }

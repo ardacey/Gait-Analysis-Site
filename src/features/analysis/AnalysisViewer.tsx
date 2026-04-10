@@ -3,7 +3,8 @@ import {
   X, Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Activity, Loader2, AlertCircle, FileText,
 } from 'lucide-react'
-import type { AnalysisData, AnalysisFrame, VideoRecord } from '../../types'
+import type { AnalysisData, AnalysisFrame, FeedbackItem, VideoRecord } from '../../types'
+import { GaitFeedback } from '../../components/analysis/GaitFeedback'
 import { Skeleton3D, type Skeleton3DHandle } from './Skeleton3D'
 import { AnglesGraph } from './AnglesGraph'
 
@@ -132,16 +133,19 @@ function generateReport(data: AnalysisData, filename: string) {
 // ─── AnglePanel: updates via DOM refs during playback ─────────────────────────
 interface AnglePanelHandle { update: (f: AnalysisFrame) => void }
 
-// Renders the right panel once; exposes imperative update
+type PanelTab = 'angles' | 'metrics' | 'feedback'
+
 function AnglePanel({
   initialFrame, summary, frameCount,
-  panelRef,
+  panelRef, feedback,
 }: {
   initialFrame: AnalysisFrame
   summary: Record<string, number>
   frameCount: number
   panelRef: React.MutableRefObject<AnglePanelHandle | null>
+  feedback?: FeedbackItem[]
 }) {
+  const [tab, setTab] = useState<PanelTab>('angles')
   const angleRefs = useRef<Record<string, HTMLSpanElement | null>>({})
   const angleDivRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const frameNumRef = useRef<HTMLSpanElement | null>(null)
@@ -165,40 +169,71 @@ function AnglePanel({
     }
   }, [panelRef])
 
+  const tabs: { id: PanelTab; label: string; disabled?: boolean }[] = [
+    { id: 'angles',   label: 'Açılar' },
+    { id: 'metrics',  label: 'Metrikler' },
+    { id: 'feedback', label: 'Geri Bildirim', disabled: !feedback?.length },
+  ]
+
   return (
-    <div className="w-72 shrink-0 border-l border-slate-800 overflow-y-auto flex flex-col gap-4 p-4">
-      <div className="text-xs text-slate-500 flex justify-between">
-        <span>Frame <span ref={frameNumRef} className="text-slate-300 font-mono">{1}</span> / {frameCount}</span>
+    <div className="w-72 shrink-0 border-l border-slate-800 flex flex-col">
+
+      {/* Frame counter */}
+      <div className="text-xs text-slate-500 flex justify-between px-4 pt-3 pb-2 shrink-0">
+        <span>Frame <span ref={frameNumRef} className="text-slate-300 font-mono">1</span> / {frameCount}</span>
         <span ref={timeRef} className="font-mono text-slate-300">t = {initialFrame.t.toFixed(2)}s</span>
       </div>
 
-      <div>
-        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Eklem Açıları</div>
-        <div className="grid grid-cols-2 gap-1.5">
-          {(Object.entries(initialFrame.angles) as [string, number][]).map(([key, val]) => {
-            const isLow = val < 120, isMid = val >= 120 && val < 150
-            return (
-              <div
-                key={key}
-                ref={el => { angleDivRefs.current[key] = el }}
-                className={`rounded-lg px-3 py-2 ${isLow ? 'bg-red-900/30' : isMid ? 'bg-yellow-900/20' : 'bg-slate-800/60'}`}
-              >
-                <div className="text-xs text-slate-500">{ANGLE_LABELS[key] ?? key}</div>
-                <span
-                  ref={el => { angleRefs.current[key] = el }}
-                  className={`text-sm font-bold font-mono ${isLow ? 'text-red-300' : isMid ? 'text-yellow-300' : 'text-slate-100'}`}
-                >
-                  {val.toFixed(1)}°
-                </span>
-              </div>
-            )
-          })}
-        </div>
+      {/* Tabs */}
+      <div className="flex border-b border-slate-800 shrink-0 px-2">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            disabled={t.disabled}
+            onClick={() => setTab(t.id)}
+            className={`flex-1 py-1.5 text-xs font-medium transition-colors rounded-t
+              ${t.disabled
+                ? 'text-slate-700 cursor-not-allowed'
+                : tab === t.id
+                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {Object.keys(summary).length > 0 && (
-        <div>
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Özet Metrikler</div>
+      {/* Tab content — angles section always rendered (refs must stay mounted) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+        {/* AÇILAR — hidden via CSS, never unmounted */}
+        <div className={tab !== 'angles' ? 'hidden' : ''}>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(Object.entries(initialFrame.angles) as [string, number][]).map(([key, val]) => {
+              const isLow = val < 120, isMid = val >= 120 && val < 150
+              return (
+                <div
+                  key={key}
+                  ref={el => { angleDivRefs.current[key] = el }}
+                  className={`rounded-lg px-3 py-2 ${isLow ? 'bg-red-900/30' : isMid ? 'bg-yellow-900/20' : 'bg-slate-800/60'}`}
+                >
+                  <div className="text-xs text-slate-500">{ANGLE_LABELS[key] ?? key}</div>
+                  <span
+                    ref={el => { angleRefs.current[key] = el }}
+                    className={`text-sm font-bold font-mono ${isLow ? 'text-red-300' : isMid ? 'text-yellow-300' : 'text-slate-100'}`}
+                  >
+                    {val.toFixed(1)}°
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* METRİKLER */}
+        {tab === 'metrics' && Object.keys(summary).length > 0 && (
           <div className="flex flex-col gap-1">
             {Object.entries(summary).map(([key, val]) => {
               const m = processMetric(key, val)
@@ -210,8 +245,13 @@ function AnglePanel({
               )
             })}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* GERİ BİLDİRİM */}
+        {tab === 'feedback' && feedback && (
+          <GaitFeedback feedback={feedback} variant="dark" />
+        )}
+      </div>
     </div>
   )
 }
@@ -388,6 +428,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               summary={data.summary}
               frameCount={data.meta.frame_count}
               panelRef={anglePanelRef}
+              feedback={data.feedback}
             />
           </div>
 
