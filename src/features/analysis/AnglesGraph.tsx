@@ -43,11 +43,10 @@ export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphPr
   const handleMouseClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const container = chartContainerRef.current
     if (!container || frames.length === 0) return
-    const rect = container.getBoundingClientRect()
-    const LEFT_MARGIN = 30, RIGHT_MARGIN = 8
-    const chartW = rect.width - LEFT_MARGIN - RIGHT_MARGIN
-    const x = e.clientX - rect.left - LEFT_MARGIN
-    const pct = Math.max(0, Math.min(1, x / chartW))
+    const grid = container.querySelector('.recharts-cartesian-grid')
+    const rect = grid ? grid.getBoundingClientRect() : container.getBoundingClientRect()
+    const x = Math.max(0, e.clientX - rect.left)
+    const pct = Math.max(0, Math.min(1, x / rect.width))
     const duration = frames[frames.length - 1].t
     const targetT = pct * duration
     const idx = frames.reduce((best, f, i) =>
@@ -100,6 +99,7 @@ export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphPr
         {(Object.keys(GROUPS) as GroupKey[]).map(g => (
           <button
             key={g}
+            type="button"
             onClick={() => setActiveGroup(g)}
             className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
               activeGroup === g

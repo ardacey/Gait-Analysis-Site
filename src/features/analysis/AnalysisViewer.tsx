@@ -322,10 +322,12 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
       // Move graph cursor line (accounts for recharts margins: left≈30px, right≈8px)
       if (graphLineRef.current) {
         const parent = graphLineRef.current.parentElement
-        if (parent) {
-          const w = parent.clientWidth - 38  // 30 left margin + 8 right margin
+        const grid = parent?.querySelector('.recharts-cartesian-grid')
+        if (parent && grid) {
           const pct = data.meta.duration > 0 ? f.t / data.meta.duration : 0
-          graphLineRef.current.style.left = `${30 + pct * w}px`
+          const parentRect = parent.getBoundingClientRect()
+          const gridRect = grid.getBoundingClientRect()
+          graphLineRef.current.style.left = `${gridRect.left - parentRect.left + pct * gridRect.width}px`
         }
       }
     }, 1000 / fps)

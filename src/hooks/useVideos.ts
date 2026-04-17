@@ -118,7 +118,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
         (payload) => {
           const inserted = payload.new as VideoRecord
           if (role === 'patient' && inserted.user_name !== username) return
-          setVideos(prev => [inserted, ...prev])
+          setVideos(prev => prev.some(v => v.id === inserted.id) ? prev : [inserted, ...prev])
         }
       )
       .subscribe((status) => {
@@ -192,11 +192,10 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
         }
       }
 
-      await fetchVideos()
       setIsUploading(false)
       setStatus('')
     },
-    [client, fetchVideos, onToast, username]
+    [client, onToast, username]
   )
 
   const handleFileChange = useCallback(
