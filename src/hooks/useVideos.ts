@@ -83,17 +83,61 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
     }
   }, [fetchVideos, isLoggedIn])
 
-  // Poll Supabase every 15s while there are in-progress jobs
+  // Realtime subscription with polling fallback
   useEffect(() => {
-    if (!isLoggedIn) return
-    const hasInProgress = videos.some(
-      v => v.job_status === 'queued' || v.job_status === 'processing'
-    )
-    if (!hasInProgress) return
+    if (!isLoggedIn || !client) return
 
-    const id = setInterval(() => void fetchVideos(), 15_000)
-    return () => clearInterval(id)
-  }, [videos, isLoggedIn, fetchVideos])
+    let pollId: ReturnType<typeof setInterval> | null = null
+
+    const handleUpdate = (updated: VideoRecord) => {
+      if (role === 'patient' && updated.user_name !== username) return
+      setVideos(prev => {
+        const was = prev.find(v => v.id === updated.id)
+        if (updated.job_status === 'done' && was?.job_status !== 'done' && !initialDoneIds.current.has(updated.id)) {
+          onToastRef.current('Video analizi tamamlandı! Analizi inceleyebilirsiniz.', 'success')
+          initialDoneIds.current.add(updated.id)
+        }
+        if (updated.job_status === 'error' && was?.job_status !== 'error' && !initialDoneIds.current.has(updated.id)) {
+          onToastRef.current('Video analizi başarısız oldu.', 'error')
+          initialDoneIds.current.add(updated.id)
+        }
+        return prev.map(v => v.id === updated.id ? updated : v)
+      })
+    }
+
+    const channel = client
+      .channel('videos-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'videos' },
+        (payload) => handleUpdate(payload.new as VideoRecord)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'videos' },
+        (payload) => {
+          const inserted = payload.new as VideoRecord
+          if (role === 'patient' && inserted.user_name !== username) return
+          setVideos(prev => [inserted, ...prev])
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] status:', status)
+        if (status === 'SUBSCRIBED') {
+          // Realtime çalışıyor, polling'e gerek yok
+          if (pollId) { clearInterval(pollId); pollId = null }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // Realtime başarısız, 15sn polling'e geri dön
+          console.warn('[Realtime] bağlantı kurulamadı, polling başlatılıyor')
+          if (!pollId) pollId = setInterval(() => void fetchVideos(), 15_000)
+        }
+      })
+
+    return () => {
+      void client.removeChannel(channel)
+      if (pollId) clearInterval(pollId)
+    }
+  }, [isLoggedIn, client, role, username, fetchVideos])
 
   const handleUploadFiles = useCallback(
     async (files: File[]) => {
@@ -197,6 +241,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
     videoToDelete,
     setVideoToDelete,
     handleFileChange,
+    handleUploadFiles,
     handleDelete,
   }
 }

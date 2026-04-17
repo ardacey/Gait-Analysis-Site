@@ -378,6 +378,34 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, step])
 
+  // perJoint: her joint için anomali frame index seti (grafik için)
+  // anyJoint: herhangi bir joint'te anomali olan frame'ler (slider için)
+  const { anomalyMap } = useMemo(() => {
+    const empty = { anomalyMap: new Map<string, Set<number>>() }
+    if (!data || data.frames.length < 8) return empty
+    const keys = Object.keys(data.frames[0].angles) as string[]
+    const perJoint = new Map<string, Set<number>>()
+    for (const key of keys) {
+      const vals = data.frames
+        .map(f => (f.angles as Record<string, number>)[key])
+        .filter(v => v != null && !isNaN(v))
+      if (vals.length < 8) continue
+      const sorted = [...vals].sort((a, b) => a - b)
+      const q1 = sorted[Math.floor(sorted.length * 0.25)]
+      const q3 = sorted[Math.floor(sorted.length * 0.75)]
+      const iqr = q3 - q1
+      const low = q1 - 1.5 * iqr
+      const high = q3 + 1.5 * iqr
+      const jointSet = new Set<number>()
+      data.frames.forEach((f, i) => {
+        const val = (f.angles as Record<string, number>)[key]
+        if (val != null && (val < low || val > high)) jointSet.add(i)
+      })
+      if (jointSet.size > 0) perJoint.set(key, jointSet)
+    }
+    return { anomalyMap: perJoint }
+  }, [data])
+
   const phaseDist = useMemo(() => {
     if (!data) return []
     const counts: Record<string, number> = {}
@@ -533,6 +561,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
           <div className="shrink-0 border-t border-slate-800 px-4 pt-2 pb-3 relative">
             <AnglesGraph
               frames={data.frames}
+              anomalyMap={anomalyMap}
               onFrameChange={n => {
                 frameIdxRef.current = n
                 const f = dataRef.current?.frames[n]

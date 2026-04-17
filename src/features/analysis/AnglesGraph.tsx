@@ -8,6 +8,7 @@ import type { AnalysisFrame } from '../../types'
 interface AnglesGraphProps {
   frames: AnalysisFrame[]
   onFrameChange: (idx: number) => void
+  anomalyMap?: Map<string, Set<number>>
 }
 
 const GROUPS = {
@@ -35,7 +36,7 @@ const PHASE_FILL: Record<string, string> = {
   terminal_stance:  'rgba(139,92,246,0.10)',
 }
 
-export function AnglesGraph({ frames, onFrameChange }: AnglesGraphProps) {
+export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphProps) {
   const [activeGroup, setActiveGroup] = useState<GroupKey>('Diz')
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
@@ -60,7 +61,8 @@ export function AnglesGraph({ frames, onFrameChange }: AnglesGraphProps) {
     const step = Math.max(1, Math.floor(frameCount / 400))
     return frames
       .filter((_, i) => i % step === 0)
-      .map(f => ({
+      .map((f, si) => ({
+        _frameIdx: si * step,
         t: parseFloat(f.t.toFixed(2)),
         'L Knee': f.angles['L Knee'],
         'R Knee': f.angles['R Knee'],
@@ -159,9 +161,16 @@ export function AnglesGraph({ frames, onFrameChange }: AnglesGraphProps) {
               type="monotone"
               dataKey={l.key}
               stroke={l.color}
-              dot={false}
               strokeWidth={1.5}
               activeDot={{ r: 3 }}
+              dot={(props: { cx?: number; cy?: number; payload?: Record<string, number> }) => {
+                const { cx, cy, payload } = props
+                if (cx == null || cy == null || !payload) return <g key={`${cx}-${cy}`} />
+                if (anomalyMap?.get(l.key)?.has(payload._frameIdx)) {
+                  return <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={3} fill="#ef4444" stroke="#1e293b" strokeWidth={1} />
+                }
+                return <g key={`${cx}-${cy}`} />
+              }}
             />
           ))}
         </LineChart>

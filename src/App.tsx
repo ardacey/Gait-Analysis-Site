@@ -24,9 +24,9 @@ function App() {
     doctorCode,
     setDoctorCode,
     isLoggedIn,
-    setIsLoggedIn,
     authLoading,
-    handleAuth
+    handleAuth,
+    logout,
   } = useAuth({ onToast: showToast })
 
   const {
@@ -39,6 +39,7 @@ function App() {
     videoToDelete,
     setVideoToDelete,
     handleFileChange,
+    handleUploadFiles,
     handleDelete,
   } = useVideos({ username, role, isLoggedIn, onToast: showToast })
 
@@ -69,9 +70,9 @@ function App() {
         />
       ) : (
         <Dashboard
-          role={role} username={username} setIsLoggedIn={setIsLoggedIn}
+          role={role} username={username} onLogout={logout}
           videos={videos} loadingVideos={loadingVideos}
-          isUploading={isUploading} status={status} handleFileChange={handleFileChange}
+          isUploading={isUploading} status={status} handleFileChange={handleFileChange} handleUploadFiles={handleUploadFiles}
           setActiveVideo={setActiveVideo} confirmDelete={setVideoToDelete}
           openAnalysis={setAnalysisVideo}
         />

@@ -1,5 +1,5 @@
 // src/features/dashboard/Dashboard.tsx
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { Card, CardContent } from '../../components/ui/card'
 import {
@@ -12,12 +12,13 @@ import type { UserRole, VideoRecord } from '../../types'
 interface DashboardProps {
   role: UserRole
   username: string
-  setIsLoggedIn: (val: boolean) => void
+  onLogout: () => void
   videos: VideoRecord[]
   loadingVideos: boolean
   isUploading: boolean
   status: string
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  handleUploadFiles: (files: File[]) => void
   setActiveVideo: (url: string) => void
   confirmDelete: (video: VideoRecord) => void
   openAnalysis: (video: VideoRecord) => void
@@ -57,13 +58,34 @@ function StatusBadge({ jobStatus }: { jobStatus: string | null }) {
 }
 
 export function Dashboard({
-  role, username, setIsLoggedIn,
+  role, username, onLogout,
   videos, loadingVideos,
-  isUploading, status, handleFileChange,
+  isUploading, status, handleFileChange, handleUploadFiles,
   setActiveVideo, confirmDelete, openAnalysis,
 }: DashboardProps) {
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const dragCounter = useRef(0)
+
+  function onDragEnter(e: React.DragEvent) {
+    e.preventDefault()
+    dragCounter.current++
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true)
+  }
+  function onDragLeave(e: React.DragEvent) {
+    e.preventDefault()
+    dragCounter.current--
+    if (dragCounter.current === 0) setIsDragging(false)
+  }
+  function onDragOver(e: React.DragEvent) { e.preventDefault() }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    dragCounter.current = 0
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('video/'))
+    if (files.length > 0) handleUploadFiles(files)
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -83,7 +105,7 @@ export function Dashboard({
               <div className="text-sm font-bold text-slate-800">{username}</div>
               <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">{role === 'patient' ? 'Hasta Paneli' : 'Doktor Paneli'}</div>
             </div>
-            <Button variant="outline" size="icon" onClick={() => setIsLoggedIn(false)} className="hover:bg-red-50 hover:text-red-600 border-slate-200">
+            <Button variant="outline" size="icon" onClick={onLogout} className="hover:bg-red-50 hover:text-red-600 border-slate-200">
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
@@ -94,20 +116,38 @@ export function Dashboard({
 
         {/* YÜKLEME ALANI (Sadece Hasta) */}
         {role === 'patient' && (
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="space-y-2 text-center sm:text-left">
-              <h2 className="text-2xl font-bold">Yeni Analiz Başlat</h2>
-              <p className="text-blue-100 max-w-md">Yürüyüş analizi için videonuzu buraya yükleyin. Doktorunuz en kısa sürede inceleyecektir.</p>
-            </div>
-            <div className="flex flex-col items-center gap-3 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20">
-              <Button
-                onClick={() => inputRef.current?.click()}
-                disabled={isUploading}
-                className="bg-white text-blue-600 hover:bg-blue-50 border-0 font-bold px-8 py-6 h-auto text-lg shadow-lg"
-              >
-                {isUploading ? 'Yükleniyor...' : 'Video Yükle'} <Upload className="ml-2 w-5 h-5" />
-              </Button>
-              {status && <span className="text-sm font-medium animate-pulse">{status}</span>}
+          <div
+            onDragEnter={onDragEnter}
+            onDragLeave={onDragLeave}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onClick={() => !isUploading && inputRef.current?.click()}
+            className={`relative rounded-2xl p-8 text-white shadow-xl cursor-pointer transition-all duration-200 select-none
+              ${isDragging
+                ? 'bg-indigo-500 ring-4 ring-white/50 scale-[1.01]'
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'
+              }`}
+          >
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+              <div className="space-y-2 text-center sm:text-left">
+                <h2 className="text-2xl font-bold">
+                  {isDragging ? 'Dosyayı bırakın' : 'Yeni Analiz Başlat'}
+                </h2>
+                <p className="text-blue-100 max-w-md">
+                  {isDragging
+                    ? 'Video dosyasını buraya bırakarak yükleyin.'
+                    : 'Videoyu sürükleyip bırakın veya tıklayarak seçin. Doktorunuz en kısa sürede inceleyecektir.'}
+                </p>
+              </div>
+              <div className="flex flex-col items-center gap-3 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 pointer-events-none">
+                {isUploading
+                  ? <Loader2 className="w-8 h-8 animate-spin" />
+                  : <Upload className={`w-8 h-8 transition-transform ${isDragging ? 'scale-125' : ''}`} />
+                }
+                <span className="text-sm font-medium">
+                  {isUploading ? (status || 'Yükleniyor...') : isDragging ? 'Bırakın' : 'Tıkla veya Sürükle'}
+                </span>
+              </div>
             </div>
             <input ref={inputRef} type="file" accept="video/*" onChange={handleFileChange} className="hidden" aria-label="Video dosyası seç" />
           </div>
@@ -123,7 +163,19 @@ export function Dashboard({
           </div>
 
           {loadingVideos ? (
-            <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                  <div className="h-40 bg-slate-200 animate-pulse" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 bg-slate-200 animate-pulse rounded w-3/4" />
+                    <div className="h-3 bg-slate-100 animate-pulse rounded w-1/2" />
+                    <div className="h-6 bg-slate-100 animate-pulse rounded w-1/3" />
+                    <div className="h-8 bg-slate-200 animate-pulse rounded-lg mt-2" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : videos.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
               <div className="mx-auto bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
@@ -134,13 +186,37 @@ export function Dashboard({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {videos.map((video) => (
-                  <Card key={video.id} className="group overflow-hidden hover:shadow-xl transition-all duration-300 border-slate-200">
+              {videos.map((video) => {
+                const st = video.job_status
+                const cardBorder =
+                  st === 'done'       ? 'border-emerald-300 ring-1 ring-emerald-100' :
+                  st === 'processing' ? 'border-blue-300 ring-1 ring-blue-100' :
+                  st === 'queued'     ? 'border-yellow-300 ring-1 ring-yellow-100' :
+                  st === 'error'      ? 'border-red-300 ring-1 ring-red-100' :
+                  'border-slate-200'
+                const thumbBg =
+                  st === 'done'       ? 'bg-emerald-950' :
+                  st === 'processing' ? 'bg-blue-950' :
+                  st === 'queued'     ? 'bg-yellow-950' :
+                  st === 'error'      ? 'bg-red-950' :
+                  'bg-slate-900'
+                return (
+                  <Card key={video.id} className={`group overflow-hidden hover:shadow-xl transition-all duration-300 ${cardBorder}`}>
                     <div
-                      className="h-40 bg-slate-900 flex items-center justify-center relative group-hover:bg-slate-800 transition-colors cursor-pointer"
+                      className={`h-40 ${thumbBg} flex items-center justify-center relative cursor-pointer transition-colors`}
                       onClick={() => video.file_url && setActiveVideo(video.file_url)}
                     >
                       <Play className="w-12 h-12 text-white opacity-80 group-hover:scale-110 transition-transform" />
+                      {/* Status overlay top-left */}
+                      {st && (
+                        <div className="absolute top-2 left-2">
+                          <StatusBadge jobStatus={st} />
+                        </div>
+                      )}
+                      {/* Processing pulse ring */}
+                      {st === 'processing' && (
+                        <div className="absolute inset-0 border-2 border-blue-400 rounded animate-pulse pointer-events-none" />
+                      )}
                       <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">MP4</div>
                     </div>
 
@@ -151,11 +227,6 @@ export function Dashboard({
                           <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
                             <User className="w-3 h-3" /> <span className="font-medium text-slate-700">{video.user_name}</span>
                           </div>
-                          {video.job_status && (
-                            <div className="mt-1.5">
-                              <StatusBadge jobStatus={video.job_status} />
-                            </div>
-                          )}
                         </div>
                         <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full shrink-0">
                           {new Date(video.created_at).toLocaleDateString('tr-TR')}
@@ -210,7 +281,8 @@ export function Dashboard({
                       )}
                     </CardContent>
                   </Card>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

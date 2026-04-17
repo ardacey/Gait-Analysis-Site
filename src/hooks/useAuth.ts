@@ -2,16 +2,26 @@ import { useCallback, useState } from 'react'
 import supabase from '../lib/supabaseClient'
 import type { AuthMode, UserRole } from '../types'
 
+const SESSION_KEY = 'gait_session'
+
+function readSession(): { username: string; role: UserRole } | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    return raw ? (JSON.parse(raw) as { username: string; role: UserRole }) : null
+  } catch { return null }
+}
+
 interface UseAuthOptions {
   onToast: (message: string, type?: 'success' | 'error' | 'info') => void
 }
 
 export function useAuth({ onToast }: UseAuthOptions) {
   const [authMode, setAuthMode] = useState<AuthMode>('login')
-  const [username, setUsername] = useState<string>('')
-  const [role, setRole] = useState<UserRole>('patient')
+  const saved = readSession()
+  const [username, setUsername] = useState<string>(saved?.username ?? '')
+  const [role, setRole] = useState<UserRole>(saved?.role ?? 'patient')
   const [doctorCode, setDoctorCode] = useState<string>('')
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(!!saved)
   const [authLoading, setAuthLoading] = useState(false)
 
   const handleAuth = useCallback(
@@ -98,6 +108,7 @@ export function useAuth({ onToast }: UseAuthOptions) {
           if (error || !user) {
             onToast('Kullanıcı bulunamadı veya rol hatalı.', 'error')
           } else {
+            localStorage.setItem(SESSION_KEY, JSON.stringify({ username: username.trim(), role }))
             onToast(`Hoşgeldiniz, ${username}`, 'success')
             setIsLoggedIn(true)
           }
@@ -113,6 +124,12 @@ export function useAuth({ onToast }: UseAuthOptions) {
     [authMode, doctorCode, onToast, role, username]
   )
 
+  const logout = useCallback(() => {
+    localStorage.removeItem(SESSION_KEY)
+    setIsLoggedIn(false)
+    setUsername('')
+  }, [])
+
   return {
     authMode,
     setAuthMode,
@@ -125,6 +142,7 @@ export function useAuth({ onToast }: UseAuthOptions) {
     isLoggedIn,
     setIsLoggedIn,
     authLoading,
-    handleAuth
+    handleAuth,
+    logout,
   }
 }
