@@ -113,6 +113,13 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@layer utilities {
+  .phase-bar-fill {
+    height: 100%;
+    width: var(--phase-w, 0%);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

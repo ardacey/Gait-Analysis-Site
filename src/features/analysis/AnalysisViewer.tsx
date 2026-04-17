@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   X, Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Activity, Loader2, AlertCircle, FileText,
@@ -19,6 +19,14 @@ const GAIT_PHASE_LABELS: Record<string, { label: string; color: string }> = {
   loading_response:  { label: 'Yük Aktarımı',   color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' },
   mid_stance:        { label: 'Orta Duruş',     color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
   stance:            { label: 'Duruş',          color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' },
+}
+
+const PHASE_BAR_CLASS: Record<string, string> = {
+  swing:            'bg-blue-500',
+  terminal_stance:  'bg-purple-500',
+  loading_response: 'bg-yellow-500',
+  mid_stance:       'bg-emerald-500',
+  stance:           'bg-slate-500',
 }
 
 const ANGLE_LABELS: Record<string, string> = {
@@ -370,6 +378,16 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, step])
 
+  const phaseDist = useMemo(() => {
+    if (!data) return []
+    const counts: Record<string, number> = {}
+    for (const f of data.frames) counts[f.gait_phase] = (counts[f.gait_phase] ?? 0) + 1
+    const total = data.frames.length
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([phase, count]) => ({ phase, pct: (count / total) * 100 }))
+  }, [data])
+
   const frame: AnalysisFrame | undefined = data?.frames[frameIdx]
   const phaseInfo = frame
     ? (GAIT_PHASE_LABELS[frame.gait_phase] ?? { label: frame.gait_phase, color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' })
@@ -453,6 +471,32 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               }}
               className="w-full accent-blue-500 h-1.5 cursor-pointer"
             />
+
+            {/* Gait phase distribution bar */}
+            {phaseDist.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <div className="flex h-2 rounded overflow-hidden w-full">
+                  {phaseDist.map(({ phase, pct }) => (
+                    <div
+                      key={phase}
+                      title={`${GAIT_PHASE_LABELS[phase]?.label ?? phase}: ${pct.toFixed(1)}%`}
+                      className={`phase-bar-fill ${PHASE_BAR_CLASS[phase] ?? 'bg-slate-500'}`}
+                      style={{ '--phase-w': `${pct}%` } as React.CSSProperties}
+                    />
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                  {phaseDist.map(({ phase, pct }) => (
+                    <span key={phase} className="flex items-center gap-1 text-[10px] text-slate-400">
+                      <span className={`inline-block w-2 h-2 rounded-sm ${PHASE_BAR_CLASS[phase] ?? 'bg-slate-500'}`} />
+                      {GAIT_PHASE_LABELS[phase]?.label ?? phase}
+                      <span className="text-slate-500">{pct.toFixed(1)}%</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <button type="button" title="Başa dön"

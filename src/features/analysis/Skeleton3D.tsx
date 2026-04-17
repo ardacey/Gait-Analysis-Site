@@ -90,6 +90,13 @@ function applyToScene(
   })
 }
 
+const PRESETS = [
+  { label: 'Ön',  theta: 0,           phi: Math.PI / 2 },
+  { label: 'Sağ', theta: Math.PI / 2, phi: Math.PI / 2 },
+  { label: 'Sol', theta: -Math.PI / 2, phi: Math.PI / 2 },
+  { label: 'Arka', theta: Math.PI,    phi: Math.PI / 2 },
+]
+
 export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
   function Skeleton3D({ joints, jointNames, edges, angles }, ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -186,7 +193,7 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
       const onMove  = (e: MouseEvent) => {
         if (!dragging) return
         spherical.theta -= (e.clientX - mouse.x) * 0.01
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + (e.clientY - mouse.y) * 0.01))
+        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - (e.clientY - mouse.y) * 0.01))
         mouse.x = e.clientX; mouse.y = e.clientY
         camera.position.setFromSpherical(spherical)
         camera.lookAt(0, 0, 0)
@@ -223,12 +230,34 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
       applyToScene(s.jointMeshes, s.boneMeshes, edgesRef.current, centered, jointNamesRef.current, angles)
     }, [centered, angles])
 
+    function applyPreset(theta: number, phi: number) {
+      const s = sceneRef.current
+      if (!s) return
+      s.spherical.theta = theta
+      s.spherical.phi = phi
+      s.camera.position.setFromSpherical(s.spherical)
+      s.camera.lookAt(0, 0, 0)
+    }
+
     return (
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
-        style={{ display: 'block' }}
-      />
+      <div className="relative w-full h-full">
+        <canvas
+          ref={canvasRef}
+          className="block w-full h-full cursor-grab active:cursor-grabbing"
+        />
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+          {PRESETS.map(p => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPreset(p.theta, p.phi)}
+              className="px-2 py-0.5 text-xs rounded bg-slate-700/80 text-slate-200 hover:bg-slate-600/90 transition-colors"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
     )
   }
 )

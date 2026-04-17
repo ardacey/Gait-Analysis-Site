@@ -189,7 +189,7 @@ export function Dashboard({
                             <Button
                               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
                               size="sm"
-                              disabled={video.job_status !== 'done' || !video.annotated_url}
+                              disabled={video.job_status !== 'done'}
                               onClick={() => openAnalysis(video)}
                             >
                               <BarChart2 className="w-3 h-3 mr-2" /> Analizi İncele
@@ -206,14 +206,6 @@ export function Dashboard({
                             )}
                           </div>
 
-                          <Button
-                            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
-                            size="sm"
-                            disabled={video.job_status !== 'done'}
-                            onClick={() => openAnalysis(video)}
-                          >
-                            <Activity className="w-3 h-3 mr-2" /> Detaylı Analiz
-                          </Button>
                         </>
                       )}
                     </CardContent>
