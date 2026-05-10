@@ -362,7 +362,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     const data = dataRef.current
     if (!data) return
     const f = data.frames[n]
-    anglePanelRef.current?.update(f, n)
+    anglePanelRef.current?.update(f)
     if (scrubberRef.current) scrubberRef.current.value = String(n)
     if (timeDisplayRef.current) timeDisplayRef.current.textContent = `${f.t.toFixed(2)}s / ${data.meta.duration.toFixed(2)}s · ${data.meta.fps.toFixed(0)} fps`
     if (phaseBadgeRef.current) {

@@ -1,6 +1,5 @@
 // src/features/dashboard/Dashboard.tsx
 import { useRef, useState } from 'react'
-import { Button } from '../../components/ui/button'
 import {
   Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus,
   Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film,
