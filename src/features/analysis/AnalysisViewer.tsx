@@ -36,6 +36,28 @@ const ANGLE_LABELS: Record<string, string> = {
   'L Elbow': 'Sol Dirsek', 'R Elbow': 'Sağ Dirsek',
 }
 
+// Clinical normal gait ranges per joint
+const ANGLE_RANGES: Record<string, { low: number; high: number; warnLow: number; warnHigh: number }> = {
+  'L Knee':  { warnLow: 90,  low: 80,  high: 185, warnHigh: 185 },
+  'R Knee':  { warnLow: 90,  low: 80,  high: 185, warnHigh: 185 },
+  'L Hip':   { warnLow: 130, low: 120, high: 220,  warnHigh: 225 },
+  'R Hip':   { warnLow: 130, low: 120, high: 220,  warnHigh: 225 },
+  'L Ankle': { warnLow: 55,  low: 45,  high: 125, warnHigh: 130 },
+  'R Ankle': { warnLow: 55,  low: 45,  high: 125, warnHigh: 130 },
+  'L Elbow': { warnLow: 70,  low: 60,  high: 185, warnHigh: 185 },
+  'R Elbow': { warnLow: 70,  low: 60,  high: 185, warnHigh: 185 },
+}
+
+function getAngleColor(key: string, val: number) {
+  const r = ANGLE_RANGES[key]
+  if (!r) return { bg: 'bg-slate-800/60', text: 'text-slate-100' }
+  if (val < r.low || val > r.high)
+    return { bg: 'bg-red-900/30', text: 'text-red-300' }
+  if (val < r.warnLow || val > r.warnHigh)
+    return { bg: 'bg-yellow-900/20', text: 'text-yellow-300' }
+  return { bg: 'bg-slate-800/60', text: 'text-slate-100' }
+}
+
 const METRIC_LABELS: Record<string, string> = {
   // Spatio-temporal
   cadence:                            'Kadans',
@@ -168,9 +190,9 @@ function AnglePanel({
           if (span) span.textContent = `${val.toFixed(1)}°`
           const div = angleDivRefs.current[key]
           if (div) {
-            const isLow = val < 120, isMid = val >= 120 && val < 150
-            div.className = `rounded-lg px-3 py-2 ${isLow ? 'bg-red-900/30' : isMid ? 'bg-yellow-900/20' : 'bg-slate-800/60'}`
-            if (span) span.className = `text-sm font-bold font-mono ${isLow ? 'text-red-300' : isMid ? 'text-yellow-300' : 'text-slate-100'}`
+            const { bg, text } = getAngleColor(key, val)
+            div.className = `rounded-lg px-3 py-2 ${bg}`
+            if (span) span.className = `text-sm font-bold font-mono ${text}`
           }
         }
       }
@@ -220,17 +242,17 @@ function AnglePanel({
         <div className={tab !== 'angles' ? 'hidden' : ''}>
           <div className="grid grid-cols-2 gap-1.5">
             {(Object.entries(initialFrame.angles) as [string, number][]).map(([key, val]) => {
-              const isLow = val < 120, isMid = val >= 120 && val < 150
+              const { bg, text } = getAngleColor(key, val)
               return (
                 <div
                   key={key}
                   ref={el => { angleDivRefs.current[key] = el }}
-                  className={`rounded-lg px-3 py-2 ${isLow ? 'bg-red-900/30' : isMid ? 'bg-yellow-900/20' : 'bg-slate-800/60'}`}
+                  className={`rounded-lg px-3 py-2 ${bg}`}
                 >
                   <div className="text-xs text-slate-500">{ANGLE_LABELS[key] ?? key}</div>
                   <span
                     ref={el => { angleRefs.current[key] = el }}
-                    className={`text-sm font-bold font-mono ${isLow ? 'text-red-300' : isMid ? 'text-yellow-300' : 'text-slate-100'}`}
+                    className={`text-sm font-bold font-mono ${text}`}
                   >
                     {val.toFixed(1)}°
                   </span>
@@ -340,7 +362,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     const data = dataRef.current
     if (!data) return
     const f = data.frames[n]
-    anglePanelRef.current?.update(f)
+    anglePanelRef.current?.update(f, n)
     if (scrubberRef.current) scrubberRef.current.value = String(n)
     if (timeDisplayRef.current) timeDisplayRef.current.textContent = `${f.t.toFixed(2)}s / ${data.meta.duration.toFixed(2)}s · ${data.meta.fps.toFixed(0)} fps`
     if (phaseBadgeRef.current) {

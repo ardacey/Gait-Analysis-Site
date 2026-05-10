@@ -1,10 +1,9 @@
 // src/features/dashboard/Dashboard.tsx
 import { useRef, useState } from 'react'
 import { Button } from '../../components/ui/button'
-import { Card, CardContent } from '../../components/ui/card'
 import {
   Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus,
-  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2,
+  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film,
 } from 'lucide-react'
 
 import type { UserRole, VideoRecord } from '../../types'
@@ -26,35 +25,34 @@ interface DashboardProps {
 
 function StatusBadge({ jobStatus }: { jobStatus: string | null }) {
   if (!jobStatus) return null
-  if (jobStatus === 'queued') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-yellow-50 text-yellow-700 border-yellow-200">
-        <Clock className="w-3 h-3" /> Kuyrukta
-      </span>
-    )
-  }
-  if (jobStatus === 'processing') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-blue-50 text-blue-700 border-blue-200">
-        <Loader2 className="w-3 h-3 animate-spin" /> İşleniyor
-      </span>
-    )
-  }
-  if (jobStatus === 'done') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-emerald-50 text-emerald-700 border-emerald-200">
-        <CheckCircle2 className="w-3 h-3" /> Tamamlandı
-      </span>
-    )
-  }
-  if (jobStatus === 'error') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-red-50 text-red-700 border-red-200">
-        <XCircle className="w-3 h-3" /> Hata
-      </span>
-    )
-  }
+  if (jobStatus === 'queued') return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 border border-amber-200">
+      <Clock className="w-3 h-3" /> Kuyrukta
+    </span>
+  )
+  if (jobStatus === 'processing') return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">
+      <Loader2 className="w-3 h-3 animate-spin" /> İşleniyor
+    </span>
+  )
+  if (jobStatus === 'done') return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+      <CheckCircle2 className="w-3 h-3" /> Tamamlandı
+    </span>
+  )
+  if (jobStatus === 'error') return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-red-50 text-red-700 border border-red-200">
+      <XCircle className="w-3 h-3" /> Hata
+    </span>
+  )
   return null
+}
+
+const STATUS_ACCENT: Record<string, string> = {
+  done:       'from-emerald-500 to-teal-500',
+  processing: 'from-blue-500 to-indigo-500',
+  queued:     'from-amber-400 to-orange-400',
+  error:      'from-red-500 to-rose-500',
 }
 
 export function Dashboard({
@@ -87,68 +85,96 @@ export function Dashboard({
     if (files.length > 0) handleUploadFiles(files)
   }
 
+  const isPatient = role === 'patient'
+
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/40">
 
       {/* HEADER */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur-md">
+        <div className="max-w-5xl mx-auto px-5 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${role === 'doctor' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
-              {role === 'doctor' ? <Stethoscope className="w-5 h-5"/> : <Activity className="w-5 h-5"/>}
+            <div className={`p-2 rounded-xl ${isPatient ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}`}>
+              {isPatient ? <Activity className="w-4 h-4" /> : <Stethoscope className="w-4 h-4" />}
             </div>
-            <span className="font-bold text-slate-700 text-lg">Gait Analysis</span>
+            <span className="font-semibold text-slate-800 tracking-tight">Gait Analysis</span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <div className="text-sm font-bold text-slate-800">{username}</div>
-              <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">{role === 'patient' ? 'Hasta Paneli' : 'Doktor Paneli'}</div>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1.5">
+              <User className="w-3.5 h-3.5 text-slate-500" />
+              <span className="text-sm font-medium text-slate-700">{username}</span>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="text-xs text-slate-500">{isPatient ? 'Hasta' : 'Doktor'}</span>
             </div>
-            <Button variant="outline" size="icon" onClick={onLogout} className="hover:bg-red-50 hover:text-red-600 border-slate-200">
+            <button
+              type="button"
+              onClick={onLogout}
+              className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              title="Çıkış"
+            >
               <LogOut className="w-4 h-4" />
-            </Button>
+
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-6 space-y-8">
+      <main className="max-w-5xl mx-auto px-5 py-8 space-y-8">
 
-        {/* YÜKLEME ALANI (Sadece Hasta) */}
-        {role === 'patient' && (
+        {/* YÜKLEME ALANI — Sadece Hasta */}
+        {isPatient && (
           <div
             onDragEnter={onDragEnter}
             onDragLeave={onDragLeave}
             onDragOver={onDragOver}
             onDrop={onDrop}
             onClick={() => !isUploading && inputRef.current?.click()}
-            className={`relative rounded-2xl p-8 text-white shadow-xl cursor-pointer transition-all duration-200 select-none
+            className={`relative overflow-hidden rounded-2xl cursor-pointer select-none transition-all duration-300
               ${isDragging
-                ? 'bg-indigo-500 ring-4 ring-white/50 scale-[1.01]'
-                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'
+                ? 'ring-2 ring-blue-400 ring-offset-2 scale-[1.005]'
+                : 'hover:shadow-lg hover:shadow-blue-100'
               }`}
           >
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div className="space-y-2 text-center sm:text-left">
-                <h2 className="text-2xl font-bold">
+            {/* Gradient background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800" />
+            {/* Decorative blobs */}
+            <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/5 rounded-full blur-2xl" />
+            <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-indigo-400/10 rounded-full blur-3xl" />
+
+            <div className="relative p-8 flex flex-col sm:flex-row items-center gap-6">
+              {/* Left: text */}
+              <div className="flex-1 text-center sm:text-left">
+                <p className="text-blue-200 text-xs font-semibold uppercase tracking-widest mb-2">
+                  Yürüyüş Analizi
+                </p>
+                <h2 className="text-2xl font-bold text-white mb-2">
                   {isDragging ? 'Dosyayı bırakın' : 'Yeni Analiz Başlat'}
                 </h2>
-                <p className="text-blue-100 max-w-md">
+                <p className="text-blue-200/80 text-sm max-w-sm leading-relaxed">
                   {isDragging
-                    ? 'Video dosyasını buraya bırakarak yükleyin.'
-                    : 'Videoyu sürükleyip bırakın veya tıklayarak seçin. Doktorunuz en kısa sürede inceleyecektir.'}
+                    ? 'Video dosyasını buraya bırakın, hemen yüklemeye başlayacağız.'
+                    : 'Video dosyanızı sürükleyip bırakın ya da tıklayarak seçin. Doktorunuz en kısa sürede sonuçlarınızı inceleyecektir.'}
                 </p>
               </div>
-              <div className="flex flex-col items-center gap-3 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 pointer-events-none">
+
+              {/* Right: icon box */}
+              <div className={`shrink-0 flex flex-col items-center justify-center gap-2 w-32 h-28 rounded-2xl border transition-all duration-200
+                ${isDragging
+                  ? 'bg-white/20 border-white/50'
+                  : 'bg-white/10 border-white/20 hover:bg-white/15'
+                }`}
+              >
                 {isUploading
-                  ? <Loader2 className="w-8 h-8 animate-spin" />
-                  : <Upload className={`w-8 h-8 transition-transform ${isDragging ? 'scale-125' : ''}`} />
+                  ? <Loader2 className="w-8 h-8 text-white animate-spin" />
+                  : <Upload className={`w-8 h-8 text-white transition-transform duration-200 ${isDragging ? 'scale-125' : ''}`} />
                 }
-                <span className="text-sm font-medium">
-                  {isUploading ? (status || 'Yükleniyor...') : isDragging ? 'Bırakın' : 'Tıkla veya Sürükle'}
+                <span className="text-xs text-blue-100 font-medium text-center leading-tight">
+                  {isUploading ? (status || 'Yükleniyor…') : isDragging ? 'Bırakın' : 'Tıkla veya\nSürükle'}
                 </span>
               </div>
             </div>
+
             <input ref={inputRef} type="file" accept="video/*" onChange={handleFileChange} className="hidden" aria-label="Video dosyası seç" />
           </div>
         )}
@@ -156,131 +182,121 @@ export function Dashboard({
         {/* VİDEO LİSTESİ */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              {role === 'doctor' ? <UserPlus className="w-6 h-6 text-emerald-600"/> : <Play className="w-6 h-6 text-blue-600"/>}
-              {role === 'doctor' ? 'Bekleyen Hasta Videoları' : 'Yüklenen Videolar'}
+            <h3 className="text-base font-semibold text-slate-700 flex items-center gap-2">
+              {isPatient
+                ? <><Film className="w-4 h-4 text-blue-500" /> Videolarım</>
+                : <><UserPlus className="w-4 h-4 text-emerald-500" /> Bekleyen Hasta Videoları</>
+              }
+              {!loadingVideos && videos.length > 0 && (
+                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{videos.length}</span>
+              )}
             </h3>
           </div>
 
           {loadingVideos ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
-                  <div className="h-40 bg-slate-200 animate-pulse" />
-                  <div className="p-4 space-y-3">
-                    <div className="h-4 bg-slate-200 animate-pulse rounded w-3/4" />
-                    <div className="h-3 bg-slate-100 animate-pulse rounded w-1/2" />
-                    <div className="h-6 bg-slate-100 animate-pulse rounded w-1/3" />
-                    <div className="h-8 bg-slate-200 animate-pulse rounded-lg mt-2" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="h-2 bg-slate-200 animate-pulse" />
+                  <div className="p-5 space-y-3">
+                    <div className="h-4 bg-slate-100 animate-pulse rounded-lg w-3/4" />
+                    <div className="h-3 bg-slate-100 animate-pulse rounded-lg w-1/2" />
+                    <div className="h-8 bg-slate-100 animate-pulse rounded-xl mt-4" />
                   </div>
                 </div>
               ))}
             </div>
           ) : videos.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
-              <div className="mx-auto bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
-                <Upload className="w-8 h-8 text-slate-400" />
+            <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-slate-200 bg-white/60">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                <Film className="w-7 h-7 text-slate-300" />
               </div>
-              <p className="text-lg font-medium text-slate-900">Henüz video yok</p>
-              <p className="text-slate-500">Yüklenen videolar burada listelenecektir.</p>
+              <p className="font-semibold text-slate-700">Henüz video yok</p>
+              <p className="text-sm text-slate-400 mt-1">
+                {isPatient ? 'Yeni analiz başlatmak için yukarıya video yükleyin.' : 'Hasta videoları burada görünecek.'}
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {videos.map((video) => {
-                const st = video.job_status
-                const cardBorder =
-                  st === 'done'       ? 'border-emerald-300 ring-1 ring-emerald-100' :
-                  st === 'processing' ? 'border-blue-300 ring-1 ring-blue-100' :
-                  st === 'queued'     ? 'border-yellow-300 ring-1 ring-yellow-100' :
-                  st === 'error'      ? 'border-red-300 ring-1 ring-red-100' :
-                  'border-slate-200'
-                const thumbBg =
-                  st === 'done'       ? 'bg-emerald-950' :
-                  st === 'processing' ? 'bg-blue-950' :
-                  st === 'queued'     ? 'bg-yellow-950' :
-                  st === 'error'      ? 'bg-red-950' :
-                  'bg-slate-900'
+                const st = video.job_status ?? ''
+                const accent = STATUS_ACCENT[st] ?? 'from-slate-400 to-slate-500'
                 return (
-                  <Card key={video.id} className={`group overflow-hidden hover:shadow-xl transition-all duration-300 ${cardBorder}`}>
-                    <div
-                      className={`h-40 ${thumbBg} flex items-center justify-center relative cursor-pointer transition-colors`}
-                      onClick={() => video.file_url && setActiveVideo(video.file_url)}
-                    >
-                      <Play className="w-12 h-12 text-white opacity-80 group-hover:scale-110 transition-transform" />
-                      {/* Status overlay top-left */}
-                      {st && (
-                        <div className="absolute top-2 left-2">
+                  <div
+                    key={video.id}
+                    className="group relative bg-white rounded-2xl border border-slate-200/80 overflow-hidden hover:shadow-lg hover:shadow-slate-200/60 hover:-translate-y-0.5 transition-all duration-200"
+                  >
+                    {/* Status accent bar */}
+                    <div className={`h-1 w-full bg-gradient-to-r ${accent}`} />
+
+                    <div className="p-4 space-y-3">
+                      {/* Title row */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-semibold text-slate-800 text-sm truncate" title={video.file_name}>
+                            {video.file_name}
+                          </h4>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <User className="w-3 h-3 text-slate-400" />
+                            <span className="text-xs text-slate-500">{video.user_name}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
                           <StatusBadge jobStatus={st} />
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(video.created_at).toLocaleDateString('tr-TR')}
+                          </span>
                         </div>
-                      )}
-                      {/* Processing pulse ring */}
-                      {st === 'processing' && (
-                        <div className="absolute inset-0 border-2 border-blue-400 rounded animate-pulse pointer-events-none" />
-                      )}
-                      <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">MP4</div>
-                    </div>
-
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="min-w-0 flex-1 mr-2">
-                          <h4 className="font-bold text-slate-800 truncate" title={video.file_name}>{video.file_name}</h4>
-                          <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
-                            <User className="w-3 h-3" /> <span className="font-medium text-slate-700">{video.user_name}</span>
-                          </div>
-                        </div>
-                        <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full shrink-0">
-                          {new Date(video.created_at).toLocaleDateString('tr-TR')}
-                        </span>
                       </div>
 
-                      {/* Orijinal video + sil */}
-                      <div className="flex gap-2 mt-4">
-                        <Button
-                          className="flex-1 bg-slate-800 hover:bg-slate-900 text-white"
-                          size="sm"
+                      {/* Action buttons */}
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
                           onClick={() => video.file_url && setActiveVideo(video.file_url)}
+                          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                         >
-                          <Play className="w-3 h-3 mr-2" /> İncele
-                        </Button>
+                          <Play className="w-3 h-3" /> İncele
+                        </button>
 
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="text-red-500 border-red-100 hover:bg-red-50 hover:text-red-600"
+                        {video.job_status === 'done' && (
+                          <button
+                            type="button"
+                            onClick={() => openAnalysis(video)}
+                            className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                          >
+                            <BarChart2 className="w-3 h-3" /> Analiz
+                          </button>
+                        )}
+
+                        {video.job_status && video.job_status !== 'done' && (
+                          <div className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-slate-50 text-slate-400 border border-slate-100 cursor-default">
+                            <BarChart2 className="w-3 h-3" /> Analiz
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
                           onClick={() => confirmDelete(video)}
+                          className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          title="Sil"
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
 
-                      {/* Analiz butonları (job başlatılmışsa göster) */}
-                      {video.job_status && (
-                        <>
-                          <div className="flex gap-2 mt-2">
-                            <Button
-                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
-                              size="sm"
-                              disabled={video.job_status !== 'done'}
-                              onClick={() => openAnalysis(video)}
-                            >
-                              <BarChart2 className="w-3 h-3 mr-2" /> Analizi İncele
-                            </Button>
-
-                            {video.features_url && (
-                              <a
-                                href={video.features_url}
-                                download
-                                className="inline-flex items-center justify-center gap-1 text-sm px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
-                              >
-                                <Download className="w-3 h-3" /> CSV
-                              </a>
-                            )}
-                          </div>
-
-                        </>
+                      {/* CSV download */}
+                      {video.features_url && (
+                        <a
+                          href={video.features_url}
+                          download
+                          className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                        >
+                          <Download className="w-3 h-3" /> CSV İndir
+                        </a>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 )
               })}
             </div>
