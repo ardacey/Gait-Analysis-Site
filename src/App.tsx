@@ -19,6 +19,8 @@ function App() {
     setAuthMode,
     username,
     setUsername,
+    password,
+    setPassword,
     role,
     setRole,
     doctorCode,
@@ -64,6 +66,7 @@ function App() {
         <AuthScreen
           authMode={authMode} setAuthMode={setAuthMode}
           username={username} setUsername={setUsername}
+          password={password} setPassword={setPassword}
           role={role} setRole={setRole}
           doctorCode={doctorCode} setDoctorCode={setDoctorCode}
           handleAuth={handleAuth} authLoading={authLoading}

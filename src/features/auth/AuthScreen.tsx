@@ -9,6 +9,8 @@ interface AuthScreenProps {
   setAuthMode: (mode: AuthMode) => void
   username: string
   setUsername: (name: string) => void
+  password: string
+  setPassword: (pw: string) => void
   role: UserRole
   setRole: (role: UserRole) => void
   doctorCode: string
@@ -20,6 +22,7 @@ interface AuthScreenProps {
 export function AuthScreen({
   authMode, setAuthMode,
   username, setUsername,
+  password, setPassword,
   role, setRole,
   doctorCode, setDoctorCode,
   handleAuth, authLoading
@@ -128,6 +131,21 @@ export function AuthScreen({
                   required
                 />
                 <User className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Şifre</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Şifrenizi giriniz"
+                  className="flex h-12 w-full pl-10 rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  required
+                />
+                <Lock className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
               </div>
             </div>
 

@@ -19,6 +19,7 @@ export function useAuth({ onToast }: UseAuthOptions) {
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const saved = readSession()
   const [username, setUsername] = useState<string>(saved?.username ?? '')
+  const [password, setPassword] = useState<string>('')
   const [role, setRole] = useState<UserRole>(saved?.role ?? 'patient')
   const [doctorCode, setDoctorCode] = useState<string>('')
   const [isLoggedIn, setIsLoggedIn] = useState(!!saved)
@@ -37,6 +38,10 @@ export function useAuth({ onToast }: UseAuthOptions) {
       }
       if (!/^[a-zA-Z0-9_-]+$/.test(username.trim())) {
         onToast('Kullanıcı adı yalnızca harf, rakam, _ ve - içerebilir.', 'error')
+        return
+      }
+      if (!password.trim()) {
+        onToast('Şifre boş olamaz.', 'error')
         return
       }
 
@@ -67,7 +72,7 @@ export function useAuth({ onToast }: UseAuthOptions) {
 
           if (role === 'doctor') {
             const { data, error } = await supabase.functions.invoke('create-doctor', {
-              body: { username, secret: doctorCode }
+              body: { username, secret: doctorCode, password }
             })
 
             if (error) {
@@ -88,7 +93,8 @@ export function useAuth({ onToast }: UseAuthOptions) {
           } else {
             const { error } = await supabase.from('users').insert({
               username,
-              role
+              role,
+              password,
             })
 
             if (error) throw error
@@ -103,10 +109,11 @@ export function useAuth({ onToast }: UseAuthOptions) {
             .select('*')
             .eq('username', username)
             .eq('role', role)
+            .eq('password', password)
             .single()
 
           if (error || !user) {
-            onToast('Kullanıcı bulunamadı veya rol hatalı.', 'error')
+            onToast('Kullanıcı adı, şifre veya rol hatalı.', 'error')
           } else {
             localStorage.setItem(SESSION_KEY, JSON.stringify({ username: username.trim(), role }))
             onToast(`Hoşgeldiniz, ${username}`, 'success')
@@ -121,13 +128,14 @@ export function useAuth({ onToast }: UseAuthOptions) {
         setAuthLoading(false)
       }
     },
-    [authMode, doctorCode, onToast, role, username]
+    [authMode, doctorCode, onToast, password, role, username]
   )
 
   const logout = useCallback(() => {
     localStorage.removeItem(SESSION_KEY)
     setIsLoggedIn(false)
     setUsername('')
+    setPassword('')
   }, [])
 
   return {
@@ -135,6 +143,8 @@ export function useAuth({ onToast }: UseAuthOptions) {
     setAuthMode,
     username,
     setUsername,
+    password,
+    setPassword,
     role,
     setRole,
     doctorCode,
