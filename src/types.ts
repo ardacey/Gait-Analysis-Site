@@ -1,3 +1,6 @@
+export type AnalysisMethod = 'metrabs' | 'hrnet_scgnet'
+export type ScgnetLabel = 'correct' | 'incorrect'
+
 export interface VideoRecord {
   id: number
   created_at: string
@@ -10,6 +13,9 @@ export interface VideoRecord {
   annotated_url: string | null
   features_url: string | null
   analysis_url: string | null
+  analysis_method: AnalysisMethod
+  scgnet_label: ScgnetLabel | null
+  scgnet_confidence: number | null
 }
 
 export type UserRole = 'patient' | 'doctor'
@@ -48,4 +54,5 @@ export interface AnalysisData {
   timeseries: Record<string, number[]>
   summary: Record<string, number>
   feedback?: FeedbackItem[]
+  classification?: { label: ScgnetLabel; confidence: number; model: 'scgnet' }
 }

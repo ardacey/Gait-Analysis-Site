@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import supabase, { supabaseBucket } from '../lib/supabaseClient'
 import type { Database } from '../lib/database.types'
-import type { UserRole, VideoRecord } from '../types'
+import type { AnalysisMethod, UserRole, VideoRecord } from '../types'
 
 interface UseVideosOptions {
   username: string
@@ -140,7 +140,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
   }, [isLoggedIn, client, role, username, fetchVideos])
 
   const handleUploadFiles = useCallback(
-    async (files: File[]) => {
+    async (files: File[], method: AnalysisMethod = 'metrabs') => {
       if (!client || !supabaseBucket) return
       const MAX_SIZE_MB = 100
       if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
@@ -181,6 +181,7 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
               file_path: filePath,
               file_url: publicUrlData.publicUrl,
               job_status: 'queued',
+              analysis_method: method,
             })
 
           if (dbError) throw dbError
@@ -199,11 +200,11 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
   )
 
   const handleFileChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
+    (method: AnalysisMethod) => (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = event.target.files ? Array.from(event.target.files) : []
       event.target.value = ''
       if (selectedFiles.length === 0) return
-      void handleUploadFiles(selectedFiles)
+      void handleUploadFiles(selectedFiles, method)
     },
     [handleUploadFiles]
   )

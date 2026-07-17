@@ -35,6 +35,9 @@ export type Database = {
           annotated_url: string | null
           features_url: string | null
           analysis_url: string | null
+          analysis_method: 'metrabs' | 'hrnet_scgnet'
+          scgnet_label: 'correct' | 'incorrect' | null
+          scgnet_confidence: number | null
         }
         Insert: {
           id?: number
@@ -48,6 +51,9 @@ export type Database = {
           annotated_url?: string | null
           features_url?: string | null
           analysis_url?: string | null
+          analysis_method?: 'metrabs' | 'hrnet_scgnet'
+          scgnet_label?: 'correct' | 'incorrect' | null
+          scgnet_confidence?: number | null
         }
         Update: {
           id?: number
@@ -61,6 +67,9 @@ export type Database = {
           annotated_url?: string | null
           features_url?: string | null
           analysis_url?: string | null
+          analysis_method?: 'metrabs' | 'hrnet_scgnet'
+          scgnet_label?: 'correct' | 'incorrect' | null
+          scgnet_confidence?: number | null
         }
         Relationships: []
       }
