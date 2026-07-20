@@ -46,6 +46,13 @@ export interface AnalysisFrame {
 import type { FeedbackItem } from './components/analysis/GaitFeedback'
 export type { FeedbackItem }
 
+export interface ClassificationWindow {
+  start_frame: number
+  end_frame: number
+  label: ScgnetLabel
+  confidence: number
+}
+
 export interface AnalysisData {
   meta: { fps: number; frame_count: number; duration: number }
   joint_names: string[]
@@ -54,5 +61,10 @@ export interface AnalysisData {
   timeseries: Record<string, number[]>
   summary: Record<string, number>
   feedback?: FeedbackItem[]
-  classification?: { label: ScgnetLabel; confidence: number; model: 'scgnet' }
+  classification?: {
+    label: ScgnetLabel
+    confidence: number
+    model: 'scgnet' | 'stgcn'
+    windows?: ClassificationWindow[]
+  }
 }

@@ -11,6 +11,10 @@ interface Skeleton3DProps {
   jointNames: string[]
   edges: [number, number][]
   angles?: Record<string, number>
+  /** HRNet-2D pipeline'ında z her zaman 0 — yandan/arkadan bakınca iskelet düz bir çizgiye
+   * çöküyor. flat=true iken döndürme (preset butonları + sürükleme) devre dışı bırakılır,
+   * kamera sabit ön görünümde kalır. */
+  flat?: boolean
 }
 
 const LOWER_BODY = new Set(['LHip','LKnee','LAnkle','RHip','RKnee','RAnkle','LBigToe','LSmallToe','LHeel','RBigToe','RSmallToe','RHeel','Hip'])
@@ -98,8 +102,10 @@ const PRESETS = [
 ]
 
 export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
-  function Skeleton3D({ joints, jointNames, edges, angles }, ref) {
+  function Skeleton3D({ joints, jointNames, edges, angles, flat = false }, ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
+    const flatRef = useRef(flat)
+    flatRef.current = flat
     const sceneRef = useRef<{
       renderer: THREE.WebGLRenderer
       scene: THREE.Scene
@@ -142,7 +148,10 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
 
       const scene = new THREE.Scene()
       const camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.01, 100)
-      const spherical = new THREE.Spherical(3, Math.PI / 2.5, 0)
+      // flat modda tam-önden (phi=PI/2, "Ön" preset'iyle aynı) başla — z=0 iskelet en anlamlı böyle görünür.
+      const spherical = flatRef.current
+        ? new THREE.Spherical(3, Math.PI / 2, 0)
+        : new THREE.Spherical(3, Math.PI / 2.5, 0)
       camera.position.setFromSpherical(spherical)
       camera.lookAt(0, 0, 0)
 
@@ -188,10 +197,13 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
 
       let dragging = false
       const mouse = { x: 0, y: 0 }
-      const onDown  = (e: MouseEvent) => { dragging = true; mouse.x = e.clientX; mouse.y = e.clientY }
+      const onDown  = (e: MouseEvent) => {
+        if (flatRef.current) return  // flat modda döndürme kilitli
+        dragging = true; mouse.x = e.clientX; mouse.y = e.clientY
+      }
       const onUp    = () => { dragging = false }
       const onMove  = (e: MouseEvent) => {
-        if (!dragging) return
+        if (!dragging || flatRef.current) return
         spherical.theta -= (e.clientX - mouse.x) * 0.01
         spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - (e.clientY - mouse.y) * 0.01))
         mouse.x = e.clientX; mouse.y = e.clientY
@@ -231,6 +243,7 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
     }, [centered, angles])
 
     function applyPreset(theta: number, phi: number) {
+      if (flat) return  // flat modda döndürme kilitli
       const s = sceneRef.current
       if (!s) return
       s.spherical.theta = theta
@@ -243,20 +256,27 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
       <div className="relative w-full h-full">
         <canvas
           ref={canvasRef}
-          className="block w-full h-full cursor-grab active:cursor-grabbing"
+          className={flat ? 'block w-full h-full' : 'block w-full h-full cursor-grab active:cursor-grabbing'}
         />
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-          {PRESETS.map(p => (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => applyPreset(p.theta, p.phi)}
-              className="px-2 py-0.5 text-xs rounded bg-slate-700/80 text-slate-200 hover:bg-slate-600/90 transition-colors"
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {!flat && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+            {PRESETS.map(p => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p.theta, p.phi)}
+                className="px-2 py-0.5 text-xs rounded bg-slate-700/80 text-slate-200 hover:bg-slate-600/90 transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {flat && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 text-[10px] rounded bg-slate-800/70 text-slate-500">
+            2D poz — döndürme devre dışı
+          </div>
+        )}
       </div>
     )
   }

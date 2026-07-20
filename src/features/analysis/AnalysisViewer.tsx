@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   X, Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight,
-  Activity, Loader2, AlertCircle, FileText,
+  Activity, Loader2, AlertCircle, FileText, CheckCircle2, XCircle,
 } from 'lucide-react'
 import type { AnalysisData, AnalysisFrame, FeedbackItem, VideoRecord } from '../../types'
 import { GaitFeedback } from '../../components/analysis/GaitFeedback'
@@ -441,9 +441,13 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
   }, [data])
 
   const frame: AnalysisFrame | undefined = data?.frames[frameIdx]
-  const phaseInfo = frame
+  // hrnet_scgnet pipeline'ında gait_phase her zaman 'n/a' (bkz. feature_extraction_2d.py) —
+  // bu videolar için anlamsız faz rozeti/dağılımı yerine ST-GCN sınıflandırma sonucunu gösteriyoruz.
+  const isHrnetScgnet = video.analysis_method === 'hrnet_scgnet'
+  const phaseInfo = frame && !isHrnetScgnet
     ? (GAIT_PHASE_LABELS[frame.gait_phase] ?? { label: frame.gait_phase, color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' })
     : null
+  const classification = data?.classification
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-white overflow-hidden">
@@ -456,6 +460,21 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
           {phaseInfo && (
             <span ref={phaseBadgeRef} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${phaseInfo.color}`}>
               {phaseInfo.label}
+            </span>
+          )}
+          {classification && (
+            <span
+              title={`ST-GCN: %${(classification.confidence * 100).toFixed(0)} güvenle ${classification.label === 'correct' ? 'doğru' : 'hatalı'} icra`}
+              className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${
+                classification.label === 'correct'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-red-500/20 text-red-300 border-red-500/40'
+              }`}
+            >
+              {classification.label === 'correct'
+                ? <CheckCircle2 className="w-3.5 h-3.5" />
+                : <XCircle className="w-3.5 h-3.5" />}
+              {classification.label === 'correct' ? 'Doğru İcra' : 'Hatalı İcra'} · %{(classification.confidence * 100).toFixed(0)}
             </span>
           )}
         </div>
@@ -491,6 +510,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                 jointNames={data.joint_names}
                 edges={data.edges}
                 angles={frame.angles as unknown as Record<string, number>}
+                flat={isHrnetScgnet}
               />
             </div>
             <AnglePanel
@@ -524,8 +544,33 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               className="w-full accent-blue-500 h-1.5 cursor-pointer"
             />
 
+            {/* ST-GCN pencere-bazlı doğruluk zaman çizelgesi (hrnet_scgnet için, faz dağılımı yerine) */}
+            {isHrnetScgnet && classification?.windows && classification.windows.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <div className="relative h-2 rounded overflow-hidden w-full bg-slate-800">
+                  {classification.windows.map((w, i) => {
+                    const leftPct = (w.start_frame / Math.max(data.meta.frame_count - 1, 1)) * 100
+                    const widthPct = ((w.end_frame - w.start_frame + 1) / Math.max(data.meta.frame_count, 1)) * 100
+                    return (
+                      <div
+                        key={i}
+                        title={`Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${w.label === 'correct' ? 'Doğru' : 'Hatalı'} · %${(w.confidence * 100).toFixed(0)}`}
+                        className={`absolute top-0 h-full opacity-70 ${w.label === 'correct' ? 'bg-emerald-500' : 'bg-red-500'}`}
+                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                      />
+                    )
+                  })}
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                  <span>ST-GCN pencere sonuçları (zaman içinde, örtüşmeli)</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />Doğru</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-red-500" />Hatalı</span>
+                </div>
+              </div>
+            )}
+
             {/* Gait phase distribution bar */}
-            {phaseDist.length > 0 && (
+            {!isHrnetScgnet && phaseDist.length > 0 && (
               <div className="flex flex-col gap-1">
                 <div className="flex h-2 rounded overflow-hidden w-full">
                   {phaseDist.map(({ phase, pct }) => (
