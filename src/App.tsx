@@ -6,6 +6,7 @@ import { ToastStack } from './components/feedback/ToastStack'
 import { VideoPlayerModal } from './components/overlays/VideoPlayerModal'
 import { DeleteConfirmModal } from './components/overlays/DeleteConfirmModal'
 import { AnalysisViewer } from './features/analysis/AnalysisViewer'
+import { LivePractice } from './features/live/LivePractice'
 import { useAuth } from './hooks/useAuth'
 import { useToast } from './hooks/useToast'
 import { useVideos } from './hooks/useVideos'
@@ -13,6 +14,7 @@ import type { VideoRecord } from './types'
 
 function App() {
   const [analysisVideo, setAnalysisVideo] = useState<VideoRecord | null>(null)
+  const [livePracticeOpen, setLivePracticeOpen] = useState(false)
   const { toasts, showToast, removeToast } = useToast()
   const {
     authMode,
@@ -53,6 +55,10 @@ function App() {
         <AnalysisViewer video={analysisVideo} onClose={() => setAnalysisVideo(null)} />
       )}
 
+      {livePracticeOpen && (
+        <LivePractice onClose={() => setLivePracticeOpen(false)} />
+      )}
+
       {!analysisVideo && activeVideo && (
         <VideoPlayerModal src={activeVideo} onClose={() => setActiveVideo(null)} />
       )}
@@ -78,6 +84,7 @@ function App() {
           isUploading={isUploading} status={status} handleFileChange={handleFileChange} handleUploadFiles={handleUploadFiles}
           setActiveVideo={setActiveVideo} confirmDelete={setVideoToDelete}
           openAnalysis={setAnalysisVideo}
+          onOpenLive={() => setLivePracticeOpen(true)}
         />
       )}
     </div>

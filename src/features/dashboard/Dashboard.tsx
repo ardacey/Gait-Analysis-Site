@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import {
   Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus,
-  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film, Box, Boxes,
+  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film, Box, Boxes, Camera,
 } from 'lucide-react'
 
 import type { AnalysisMethod, UserRole, VideoRecord } from '../../types'
@@ -20,6 +20,7 @@ interface DashboardProps {
   setActiveVideo: (url: string) => void
   confirmDelete: (video: VideoRecord) => void
   openAnalysis: (video: VideoRecord) => void
+  onOpenLive: () => void
 }
 
 const METHOD_LABELS: Record<AnalysisMethod, { short: string; badge: string }> = {
@@ -63,7 +64,7 @@ export function Dashboard({
   role, username, onLogout,
   videos, loadingVideos,
   isUploading, status, handleFileChange, handleUploadFiles,
-  setActiveVideo, confirmDelete, openAnalysis,
+  setActiveVideo, confirmDelete, openAnalysis, onOpenLive,
 }: DashboardProps) {
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -112,6 +113,16 @@ export function Dashboard({
               <span className="text-xs text-slate-400">·</span>
               <span className="text-xs text-slate-500">{isPatient ? 'Hasta' : 'Doktor'}</span>
             </div>
+            {isPatient && (
+              <button
+                type="button"
+                onClick={onOpenLive}
+                title="Canlı Pratik (Beta)"
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                <Camera className="w-3.5 h-3.5" /> Canlı Pratik
+              </button>
+            )}
             <button
               type="button"
               onClick={onLogout}
