@@ -25,6 +25,13 @@ export interface GaitStats {
 const SPEED_WINDOW_SEC = 4   // yürüyüş hızı bu kayan pencere üzerinden hesaplanıyor
 const MIN_TORSO_PX = 5
 const MIN_SCALE_SAMPLES = 5  // yeterli örnek birikmeden ölçeğe güvenme
+// Tek karede fizyolojik olarak mantıksız büyük kalça yer değiştirmesi (video dosyası modunda
+// loop=true olduğunda döngü başına oluşan sıçrama, ya da MoveNet'in takibi kaybedip başka bir
+// konumda yeniden bulması) — mesafeye/hız penceresine eklenmeden bir SÜREKSİZLİK olarak ele
+// alınır (bkz. pushFrame). ~2.5 m/s (koşuya yakın tempolu yürüyüş) üstü tek kare sıçraması
+// gerçek adım olamaz, bu yüzden eşik cömertçe yüksek tutuldu (30fps'te ~8cm/kare gerçek üst
+// sınır; 0.5m ona göre geniş bir güvenlik payı).
+const MAX_PLAUSIBLE_HIP_JUMP_M = 0.5
 
 interface HipSample { t: number; x: number }
 
@@ -59,7 +66,16 @@ export class GaitMetricsTracker {
     if (hipMidX == null) return
     const scale = this.currentScale()
     if (scale != null && this.lastHipX != null) {
-      this.totalDistanceM += Math.abs(hipMidX - this.lastHipX) * scale
+      const dxM = Math.abs(hipMidX - this.lastHipX) * scale
+      if (dxM > MAX_PLAUSIBLE_HIP_JUMP_M) {
+        // Süreksizlik tespit edildi (video loop wrap / takip sıçraması) — bu sıçramayı mesafeye
+        // eklemiyoruz ve hız penceresini sıfırlıyoruz ki eski/yeni konum karışıp sahte bir hız
+        // tepe noktası üretmesin. stepCount/totalDistanceM'e dokunulmuyor, sadece konum sürekliliği
+        // kesiliyor (birkaç kare sonra pencere yeniden dolup hız hesabı normale döner).
+        this.hipBuffer = []
+      } else {
+        this.totalDistanceM += dxM
+      }
     }
     this.lastHipX = hipMidX
 
