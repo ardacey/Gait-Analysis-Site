@@ -141,20 +141,19 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         await tf.setBackend('webgl')
         await tf.ready()
 
-        // Varsayılan model URL'i (tfhub.dev) artık Kaggle'a, oradan da imzalı bir GCS
-        // URL'ine yönlendiriyor — bu son adım bazı ağlarda (gözlemlendi: Türkiye'den bir
-        // kullanıcıda, hem normal hem gizli modda) hiç hata vermeden süresiz askıda kalıyor.
-        // Kütüphanenin kendi belgelediği modelUrl override'ını ("TF Hub'a erişimi olmayan
-        // bölgeler için") kullanıp doğrudan/sabit, redirect zinciri olmayan eski GCS mirror'a
-        // yönlendiriyoruz. Ayrıca tüm yükleme sürecine bir zaman aşımı sarıyoruz ki askıda
-        // kalma durumunda kullanıcı süresiz spinner yerine hata + "Tekrar Dene" görsün.
+        // Varsayılan model URL'i (tfhub.dev) Kaggle'a, oradan da imzalı bir GCS URL'ine
+        // yönlendiriyor — bu zincirin KENDİSİ doğru çalışıyor (gözlemlendi: tarayıcı network
+        // panelinde geçerli bir imzalı URL'e kadar ulaşıyor), ama son indirme adımı bazı
+        // ağlarda ara sıra hiç hata vermeden askıda kalabiliyor. (Not: bunun yerine denenen
+        // sabit bir GCS mirror URL'i - storage.googleapis.com/tfjs-models/... - artık kaldırılmış
+        // olduğundan 404 verdi, o yüzden varsayılan çözümlemeye geri dönüldü.) Tüm yükleme
+        // sürecine bir zaman aşımı sarıyoruz ki askıda kalma durumunda kullanıcı süresiz
+        // spinner yerine hata + "Tekrar Dene" görsün (transient bir ağ sorunuysa tekrar deneme
+        // genelde yeterli).
         const detector = await withTimeout(
           poseDetection.createDetector(
             poseDetection.SupportedModels.MoveNet,
-            {
-              modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
-              modelUrl: 'https://storage.googleapis.com/tfjs-models/savedmodel/movenet/singlepose/lightning/4/model.json',
-            },
+            { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING },
           ),
           25000,
           'Model yükleme 25 saniyeden uzun sürdü — internet bağlantınızı kontrol edip tekrar deneyin.',
