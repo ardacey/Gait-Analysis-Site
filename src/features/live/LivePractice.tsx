@@ -20,6 +20,9 @@
 //    — offline analiz sayfasındaki GaitFeedback.tsx bileşeni yeniden kullanılıyor.
 //  - Konumlanma/kadraj uyarısı (bkz. lib/framingCheck.ts) — tam boy görünmüyorsanız veya
 //    kameraya dönük duruyorsanız video üzerinde bloklamayan bir bilgi bandı gösterir.
+//  - Donmuş poz otomatik kurtarma (bkz. FREEZE_TIME_SEC) — MoveNet sabit bir nesneye (örn. bir
+//    su şişesi) kilitlenip kişiyi kaybederse, birkaç saniye hareketsizlik sonrası otomatik
+//    olarak detector.reset() ile tam-kare yeniden aramaya zorlanır.
 //
 // ML tabanlı canlı doğru/yanlış sınıflandırması henüz kapsam dışı (nedensel bir model veya
 // mevcut ST-GCN'in tarayıcıya taşınmasını gerektirir — bkz. rapor Bölüm 3-4). Yukarıdaki
@@ -59,6 +62,19 @@ const ANGLE_LABELS: Record<keyof LiveAngles, string> = {
 
 const GRAPH_WINDOW_SEC = 12
 
+// MoveNet Lightning performans için her karede TÜM görüntüde değil, önceki karenin etrafında
+// küçük bir "crop" bölgesinde arama yapar (dahili akıllı takip). Gerçek kişi bu bölgeden çıkarsa
+// (örn. sabit bir nesnenin — su şişesi vb. — arkasından geçip kaybolursa), model bazen o nesneye
+// yeterince "insan gibi" bir güven skoruyla KİLİTLENİP kalabiliyor ve bir daha kendiliğinden
+// düzelmiyor (gözlemlendi). Gerçek yürüyen bir kişi asla FREEZE_TIME_SEC boyunca aynı pikselde
+// sabit kalmaz — bu süre boyunca poz merkezi FREEZE_PIXEL_THRESHOLD'dan az hareket ederse
+// detector.reset() çağrılıp bir sonraki karede TÜM görüntüde yeniden arama zorlanıyor (bkz.
+// draw() içindeki kullanım). Kısa bir mola/durma anında da tetiklenebilir ama bunun maliyeti
+// düşük — reset sadece bir sonraki aramayı tüm-kareye genişletir, halen kadrajda duran kişiyi
+// kaybettirmez.
+const FREEZE_TIME_SEC = 2.5
+const FREEZE_PIXEL_THRESHOLD = 10 // video-native piksel
+
 // Bazı ağlarda (bkz. model yükleme effect'i) harici bir fetch hiç hata vermeden süresiz askıda
 // kalabiliyor — bu yardımcı, promise'i bir süre sonra reddedip kullanıcının "Tekrar Dene"
 // görmesini sağlıyor (aksi halde spinner sonsuza kadar döner).
@@ -84,6 +100,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const angleDivRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const fpsElRef = useRef<HTMLSpanElement | null>(null)
   const framingElRef = useRef<HTMLDivElement | null>(null)
+  const freezeCheckRef = useRef<{ lastPos: Point2D | null; stableSinceT: number | null }>({ lastPos: null, stableSinceT: null })
   const mirrorRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const metricsTrackerRef = useRef(new LiveMetricsTracker())
@@ -126,6 +143,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     gaitTrackerRef.current.reset()
     stepCountRef.current = 0
     stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
+    freezeCheckRef.current = { lastPos: null, stableSinceT: null }
     setGraphData([])
     setLiveFeedback([])
   }, [])
@@ -301,6 +319,36 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         ctx.scale(-1, 1)
       }
       ctx.drawImage(video, 0, 0, w, h)
+
+      // Donmuş poz tespiti (bkz. FREEZE_TIME_SEC yorumu) — su şişesi gibi sabit bir nesneye
+      // kilitlenme durumunu MoveNet'in kendi crop-takip mantığından bağımsız olarak yakalıyoruz.
+      if (keypoints && keypoints.length > 0) {
+        const visiblePts = keypoints.filter(p => (p.score ?? 0) >= MIN_SCORE)
+        if (visiblePts.length > 0) {
+          const cx = visiblePts.reduce((s, p) => s + p.x, 0) / visiblePts.length
+          const cy = visiblePts.reduce((s, p) => s + p.y, 0) / visiblePts.length
+          const fc = freezeCheckRef.current
+          const nowSec = performance.now() / 1000
+          if (fc.lastPos == null || fc.stableSinceT == null) {
+            fc.lastPos = { x: cx, y: cy }
+            fc.stableSinceT = nowSec
+          } else {
+            const moved = Math.hypot(cx - fc.lastPos.x, cy - fc.lastPos.y)
+            if (moved > FREEZE_PIXEL_THRESHOLD) {
+              fc.lastPos = { x: cx, y: cy }
+              fc.stableSinceT = nowSec
+            } else if (nowSec - fc.stableSinceT > FREEZE_TIME_SEC) {
+              // Donmuş — muhtemelen sabit bir nesneye takılı. Sıfırla, bir sonraki karede
+              // tüm görüntüde yeniden arasın.
+              detectorRef.current?.reset()
+              fc.lastPos = null
+              fc.stableSinceT = null
+            }
+          }
+        }
+      } else {
+        freezeCheckRef.current = { lastPos: null, stableSinceT: null }
+      }
 
       // byName pose varlığından BAĞIMSIZ olarak (boş obje ile) hesaplanıyor ki konumlanma
       // kontrolü (bkz. lib/framingCheck.ts) kimse algılanmadığında da çalışabilsin.
