@@ -1,18 +1,25 @@
-// Canlı pratik modu için eğitim gerektirmeyen, basit tekrar sayacı.
+// Canlı pratik (yürüyüş) modu için eğitim gerektirmeyen, basit adım/tekrar sayacı.
 //
 // Yöntem: açı sinyalinde çevrimiçi tepe-vadi (pivot) tespiti — finans grafiklerindeki "ZigZag"
 // göstergesiyle aynı mantık. Bir yön değişimini (örn. düşüşten yükselişe) "gerçek" bir pivot
-// olarak saymak için, hareketin PROMINENCE_DEG'den (varsayılan 15°) daha büyük olması gerekiyor
-// — küçük titremeler/algılama gürültüsü pivot sayılmaz. Eğitim verisi gerektirmiyor, bkz.
+// olarak saymak için, hareketin PROMINENCE_DEG'den daha büyük olması gerekiyor — küçük
+// titremeler/algılama gürültüsü (ve gait'teki duruş-fazı ikincil bükülmesi, bkz. aşağıdaki
+// PROMINENCE_DEG yorumu) pivot sayılmaz. Eğitim verisi gerektirmiyor, bkz.
 // docs/real-time-arastirma-raporu.md §2.1.
 //
 // "Tekrar" tanımı: bu projedeki açı kuralına göre (uzamış ~180°, bükülmüş daha küçük açı),
 // tüm eklemlerde (diz/kalça/dirsek) VADİ = hareketin en bükülü/alt noktası. Her onaylanan vadi
-// bir tekrar olarak sayılır — squat'ta "aşağı iniş", kol kıvırmada "kıvırma" anına denk gelir.
+// bir tekrar olarak sayılır. Yürüyüşte L Knee + R Knee vadi toplamı = adım sayısı (bkz.
+// LivePractice.tsx); genel amaçlı olduğu için ileride egzersiz tekrarları için de kullanılabilir.
 
 import type { LiveAngles } from './poseAngles'
 
-const PROMINENCE_DEG = 15
+// Normal yürüyüşte diz açısı bir gait cycle'da İKİ kez küçülüyor: (1) topuk vuruşundan hemen
+// sonraki küçük "yük aktarımı" bükülmesi (duruş fazı, ~15-20°), (2) asıl salınım fazındaki büyük
+// bükülme (~60-65°). Eşik bu ikisinin arasında olmalı — yoksa her adım 2 kez sayılır (gözlemlendi:
+// PROMINENCE_DEG=15 ile tam bu oluyordu). 30°, duruş-fazı bükülmesini güvenle eler, azalmış ROM'lu
+// (rehab/yaşlı) hastalarda bile salınım-fazı bükülmesini (tipik >40°) hâlâ yakalar.
+const PROMINENCE_DEG = 30
 
 type PivotDirection = 'up' | 'down'
 
