@@ -18,6 +18,8 @@
 //    tahminine dayanıyor, MeTRAbs'in 3D+derinlik kesinliğiyle eş değer DEĞİL.
 //  - Geri Bildirim sekmesi: kural-tabanlı (ML DEĞİL) metinsel yorumlar (bkz. lib/liveFeedback.ts)
 //    — offline analiz sayfasındaki GaitFeedback.tsx bileşeni yeniden kullanılıyor.
+//  - Konumlanma/kadraj uyarısı (bkz. lib/framingCheck.ts) — tam boy görünmüyorsanız veya
+//    kameraya dönük duruyorsanız video üzerinde bloklamayan bir bilgi bandı gösterir.
 //
 // ML tabanlı canlı doğru/yanlış sınıflandırması henüz kapsam dışı (nedensel bir model veya
 // mevcut ST-GCN'in tarayıcıya taşınmasını gerektirir — bkz. rapor Bölüm 3-4). Yukarıdaki
@@ -44,6 +46,7 @@ import { GaitMetricsTracker } from '../../lib/gaitMetrics'
 import { buildLiveFeedback, romSpan, MIN_STEPS_FOR_FEEDBACK } from '../../lib/liveFeedback'
 import { GaitFeedback, type FeedbackItem } from '../../components/analysis/GaitFeedback'
 import { computeStepTimingStats, type StepTimingStats } from '../../lib/stepTiming'
+import { checkFraming } from '../../lib/framingCheck'
 
 interface LivePracticeProps {
   onClose: () => void
@@ -80,6 +83,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const anglesElRef = useRef<Record<string, HTMLSpanElement | null>>({})
   const angleDivRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const fpsElRef = useRef<HTMLSpanElement | null>(null)
+  const framingElRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const metricsTrackerRef = useRef(new LiveMetricsTracker())
@@ -298,10 +302,23 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       }
       ctx.drawImage(video, 0, 0, w, h)
 
-      if (keypoints && keypoints.length > 0) {
-        const byName: Record<string, Point2D | undefined> = {}
-        for (const kp of keypoints) if (kp.name) byName[kp.name] = kp
+      // byName pose varlığından BAĞIMSIZ olarak (boş obje ile) hesaplanıyor ki konumlanma
+      // kontrolü (bkz. lib/framingCheck.ts) kimse algılanmadığında da çalışabilsin.
+      const byName: Record<string, Point2D | undefined> = {}
+      if (keypoints) for (const kp of keypoints) if (kp.name) byName[kp.name] = kp
 
+      // Konumlanma/kadraj kontrolü — bloklamayan, sadece uyarı amaçlı.
+      const framing = checkFraming(byName, h)
+      if (framingElRef.current) {
+        if (framing.ok || !framing.issue) {
+          framingElRef.current.classList.add('hidden')
+        } else {
+          framingElRef.current.classList.remove('hidden')
+          framingElRef.current.textContent = framing.issue
+        }
+      }
+
+      if (keypoints && keypoints.length > 0) {
         ctx.lineWidth = 3
         ctx.strokeStyle = '#475569'
         for (const [a, b] of SKELETON_EDGES) {
@@ -549,6 +566,14 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               <span ref={repCountElRef} className="text-base font-bold text-white leading-none">0</span>
               <span className="text-slate-400">adım</span>
             </div>
+          )}
+          {state === 'running' && (
+            // Konumlanma/kadraj uyarısı (bkz. lib/framingCheck.ts) — bloklamayan, sadece bilgilendirme.
+            // Varsayılan 'hidden', draw() sorun tespit ettiğinde kaldırıp metni dolduruyor.
+            <div
+              ref={framingElRef}
+              className="hidden absolute top-14 left-1/2 -translate-x-1/2 max-w-[85%] text-center text-xs px-3 py-1.5 rounded-lg bg-amber-900/85 text-amber-200 border border-amber-700/50"
+            />
           )}
           {state === 'running' && mode === 'file' && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/80 rounded-lg p-1">
