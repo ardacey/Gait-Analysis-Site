@@ -11,13 +11,16 @@
 //  - Klinik normal aralık dışına çıkınca kırmızı/sarı renk kodlaması (bkz. lib/angleRanges.ts,
 //    analiz sayfasıyla AYNI eşikler).
 //  - Metrikler sekmesi: çalışan ortalama/açısal hız RMS/ROM (bkz. lib/liveMetrics.ts) + son
-//    12sn'lik kayan grafik.
+//    12sn'lik kayan grafik + sol/sağ simetri (diz ROM farkı, kalça ortalama farkı).
 //  - Tepe-vadi tabanlı adım tespiti (bkz. lib/repCounter.ts) — video üzerinde canlı adım sayacı.
 //  - YAKLAŞIK kadans/adım uzunluğu/yürüyüş hızı (bkz. lib/gaitMetrics.ts) — piksel->metre ölçek
 //    tahminine dayanıyor, MeTRAbs'in 3D+derinlik kesinliğiyle eş değer DEĞİL.
+//  - Geri Bildirim sekmesi: kural-tabanlı (ML DEĞİL) metinsel yorumlar (bkz. lib/liveFeedback.ts)
+//    — offline analiz sayfasındaki GaitFeedback.tsx bileşeni yeniden kullanılıyor.
 //
 // ML tabanlı canlı doğru/yanlış sınıflandırması henüz kapsam dışı (nedensel bir model veya
-// mevcut ST-GCN'in tarayıcıya taşınmasını gerektirir — bkz. rapor Bölüm 3-4).
+// mevcut ST-GCN'in tarayıcıya taşınmasını gerektirir — bkz. rapor Bölüm 3-4). Yukarıdaki
+// "Geri Bildirim" sekmesi bunun YERİNE değil, o zamana kadarki basit bir ara katman.
 //
 // İki kaynak modu var:
 //  - 'camera': webcam, canlı — orijinal kullanım senaryosu.
@@ -37,6 +40,8 @@ import { LiveAnglesGraph } from './LiveAnglesGraph'
 import { getAngleColor } from '../../lib/angleRanges'
 import { RepCounter } from '../../lib/repCounter'
 import { GaitMetricsTracker } from '../../lib/gaitMetrics'
+import { buildLiveFeedback, romSpan, MIN_STEPS_FOR_FEEDBACK } from '../../lib/liveFeedback'
+import { GaitFeedback, type FeedbackItem } from '../../components/analysis/GaitFeedback'
 
 interface LivePracticeProps {
   onClose: () => void
@@ -50,7 +55,7 @@ const ANGLE_LABELS: Record<keyof LiveAngles, string> = {
 const GRAPH_WINDOW_SEC = 12
 
 type Mode = 'camera' | 'file'
-type PanelTab = 'angles' | 'metrics'
+type PanelTab = 'angles' | 'metrics' | 'feedback'
 type LoadState = 'loading-model' | 'requesting-camera' | 'waiting-file' | 'loading-file' | 'running' | 'error'
 
 export function LivePractice({ onClose }: LivePracticeProps) {
@@ -72,6 +77,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const repCountElRef = useRef<HTMLSpanElement | null>(null)
   const gaitTrackerRef = useRef(new GaitMetricsTracker())
   const gaitElRefs = useRef<{ cadence?: HTMLSpanElement | null; stepLength?: HTMLSpanElement | null; speed?: HTMLSpanElement | null }>({})
+  const symmetryElRefs = useRef<{ knee?: HTMLSpanElement | null; hip?: HTMLSpanElement | null }>({})
+  const stepCountRef = useRef(0)
+  const lastFeedbackUpdateRef = useRef(0)
 
   const [mode, setMode] = useState<Mode>('camera')
   const [videoFile, setVideoFile] = useState<File | null>(null)
@@ -81,6 +89,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const [playing, setPlaying] = useState(true)
   const [tab, setTab] = useState<PanelTab>('angles')
   const [graphData, setGraphData] = useState<LiveGraphPoint[]>([])
+  const [liveFeedback, setLiveFeedback] = useState<FeedbackItem[]>([])
   // Kamera izni reddedilince/hata olunca "Tekrar Dene" butonu bunu artırıp aşağıdaki kaynak
   // bağlama effect'ini (mode/videoFile değişmese bile) yeniden tetikler.
   const [retryKey, setRetryKey] = useState(0)
@@ -97,7 +106,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     metricsTrackerRef.current.reset()
     repCounterRef.current.reset()
     gaitTrackerRef.current.reset()
+    stepCountRef.current = 0
     setGraphData([])
+    setLiveFeedback([])
   }, [])
 
   // ── Model yükleme — bir kere, mount'ta ────────────────────────────────────
@@ -227,6 +238,12 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         lastGraphUpdateRef.current = now
         setGraphData(metricsTrackerRef.current.getGraphData().slice())
       }
+      // Kural-tabanlı geri bildirim listesi de React state — daha da düşük sıklıkta (1Hz)
+      // yeniden hesaplanması yeterli, kart metinleri her karede değişecek kadar oynak değil.
+      if (now - lastFeedbackUpdateRef.current > 1000) {
+        lastFeedbackUpdateRef.current = now
+        setLiveFeedback(buildLiveFeedback(metricsTrackerRef.current.getStats(), gaitTrackerRef.current.getStats(), stepCountRef.current))
+      }
       rafRef.current = requestAnimationFrame(loop)
     }
 
@@ -302,11 +319,27 @@ export function LivePractice({ onClose }: LivePracticeProps) {
           if (refs.rom) refs.rom.textContent = s && !Number.isNaN(s.romMin) ? `${s.romMin.toFixed(0)}°–${s.romMax.toFixed(0)}°` : '—'
         }
 
+        // Sol/sağ simetri (bkz. lib/liveFeedback.ts romSpan) — diz ROM farkı ve kalça ortalama
+        // açı farkı, mutlak derece cinsinden. Geri Bildirim sekmesindeki metinsel yorumla AYNI
+        // hesabı kullanıyor (DRY), burada sadece ham sayı olarak gösteriliyor.
+        const lKneeRomV = romSpan(stats['L Knee'])
+        const rKneeRomV = romSpan(stats['R Knee'])
+        if (symmetryElRefs.current.knee) {
+          symmetryElRefs.current.knee.textContent =
+            (lKneeRomV != null && rKneeRomV != null) ? `${Math.abs(lKneeRomV - rKneeRomV).toFixed(0)}°` : '—'
+        }
+        const lHipS = stats['L Hip'], rHipS = stats['R Hip']
+        if (symmetryElRefs.current.hip) {
+          symmetryElRefs.current.hip.textContent =
+            (lHipS && rHipS) ? `${Math.abs(lHipS.mean - rHipS.mean).toFixed(0)}°` : '—'
+        }
+
         // Tepe-vadi tabanlı adım tespiti (bkz. lib/repCounter.ts) — bir dizin en çok büktüğü
         // an (salınım fazı ortası) o bacağın adımının vekili. Sol+sağ diz toplamı = adım sayısı.
         repCounterRef.current.push(angles)
         const reps = repCounterRef.current.getReps()
         const stepCount = (reps['L Knee'] ?? 0) + (reps['R Knee'] ?? 0)
+        stepCountRef.current = stepCount
         if (repCountElRef.current) repCountElRef.current.textContent = String(stepCount)
 
         // Yaklaşık yürüyüş metrikleri (kadans/adım uzunluğu/hız) — bkz. lib/gaitMetrics.ts.
@@ -491,6 +524,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
             {([
               { id: 'angles', label: 'Açılar' },
               { id: 'metrics', label: 'Metrikler' },
+              { id: 'feedback', label: 'Geri Bildirim' },
             ] as { id: PanelTab; label: string }[]).map(t => (
               <button
                 key={t.id}
@@ -547,6 +581,22 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   </div>
                 </div>
               </div>
+
+              {/* Sol/sağ simetri (mutlak derece farkı) — bkz. lib/liveFeedback.ts romSpan */}
+              <div className="rounded-lg px-3 py-2 bg-purple-950/30 border border-purple-900/40">
+                <div className="text-[9px] text-purple-400/80 uppercase tracking-wide mb-1">Simetri (Sol-Sağ Fark)</div>
+                <div className="grid grid-cols-2 gap-1 text-center">
+                  <div>
+                    <div className="text-[9px] text-slate-600">Diz ROM</div>
+                    <span ref={el => { symmetryElRefs.current.knee = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-600">Kalça Ort.</div>
+                    <span ref={el => { symmetryElRefs.current.hip = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                </div>
+              </div>
+
               {(Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]).map(key => (
                 <div key={key} className="rounded-lg px-3 py-2 bg-slate-800/60">
                   <div className="text-xs text-slate-500 mb-1">{ANGLE_LABELS[key]}</div>
@@ -572,16 +622,30 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   metricsTrackerRef.current.reset()
                   repCounterRef.current.reset()
                   gaitTrackerRef.current.reset()
+                  stepCountRef.current = 0
                   setGraphData([])
+                  setLiveFeedback([])
                   if (repCountElRef.current) repCountElRef.current.textContent = '0'
                   if (gaitElRefs.current.cadence) gaitElRefs.current.cadence.textContent = '—'
                   if (gaitElRefs.current.stepLength) gaitElRefs.current.stepLength.textContent = '—'
                   if (gaitElRefs.current.speed) gaitElRefs.current.speed.textContent = '—'
+                  if (symmetryElRefs.current.knee) symmetryElRefs.current.knee.textContent = '—'
+                  if (symmetryElRefs.current.hip) symmetryElRefs.current.hip.textContent = '—'
                 }}
                 className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors mt-1"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Metrikleri ve Sayacı Sıfırla
               </button>
+            </div>
+
+            {/* GERİ BİLDİRİM — aynı şekilde hep mount, CSS ile gizleniyor. Kural-tabanlı
+                (ML sınıflandırması DEĞİL) — bkz. lib/liveFeedback.ts başlık yorumu. */}
+            <div className={tab !== 'feedback' ? 'hidden' : 'flex flex-col gap-3'}>
+              <GaitFeedback feedback={liveFeedback} variant="dark" />
+              <p className="text-[10px] text-slate-600 leading-relaxed">
+                Basit eşik kurallarına dayanır (ML sınıflandırması değildir) — en az {MIN_STEPS_FOR_FEEDBACK} adım
+                biriktikten sonra görünür. Gerçek doğru/yanlış icra sınıflandırması bu ilk sürümde henüz yok.
+              </p>
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed mt-auto pt-2">
