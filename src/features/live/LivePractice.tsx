@@ -81,6 +81,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const [playing, setPlaying] = useState(true)
   const [tab, setTab] = useState<PanelTab>('angles')
   const [graphData, setGraphData] = useState<LiveGraphPoint[]>([])
+  // Kamera izni reddedilince/hata olunca "Tekrar Dene" butonu bunu artırıp aşağıdaki kaynak
+  // bağlama effect'ini (mode/videoFile değişmese bile) yeniden tetikler.
+  const [retryKey, setRetryKey] = useState(0)
 
   mirrorRef.current = mode === 'camera'
 
@@ -189,7 +192,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
 
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, videoFile, modelReady, stopCurrentSource])
+  }, [mode, videoFile, modelReady, stopCurrentSource, retryKey])
 
   // ── Algılama döngüsü — model hazır olduğu sürece sürekli çalışır,
   //    aktif kaynaktan kare gelmiyorsa (henüz hazır değilse) sessizce bekler ──
@@ -445,6 +448,13 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   Kamera izni verildiğinden ve HTTPS (veya localhost) üzerinden çalıştığınızdan emin olun.
                 </span>
               )}
+              <button
+                type="button"
+                onClick={() => { setError(null); setRetryKey(k => k + 1) }}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Tekrar Dene
+              </button>
             </div>
           )}
           {state === 'running' && (
