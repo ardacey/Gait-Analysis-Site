@@ -14,12 +14,14 @@
 //    karşısında durmak zorunda kalmadan, önceden kaydedilmiş bir videoyla karşılaştırma/test
 //    yapabilmek. Kayıt/analiz sunucuya gitmiyor, sadece bu ekranda oynatılıyor.
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { X, Loader2, AlertCircle, Camera, Gauge, Video, Upload, Play, Pause, RotateCcw } from 'lucide-react'
+import { X, Loader2, AlertCircle, Camera, Gauge, Video, Upload, Play, Pause, RotateCcw, RefreshCw } from 'lucide-react'
 import type * as PoseDetectionNS from '@tensorflow-models/pose-detection'
 import {
   MOVENET_KEYPOINT_NAMES, SKELETON_EDGES, MIN_SCORE,
   computeLiveAngles, type Point2D, type LiveAngles,
 } from '../../lib/poseAngles'
+import { LiveMetricsTracker, type JointStat, type LiveGraphPoint } from '../../lib/liveMetrics'
+import { LiveAnglesGraph } from './LiveAnglesGraph'
 
 interface LivePracticeProps {
   onClose: () => void
@@ -27,9 +29,13 @@ interface LivePracticeProps {
 
 const ANGLE_LABELS: Record<keyof LiveAngles, string> = {
   'L Knee': 'Sol Diz', 'R Knee': 'Sağ Diz', 'L Hip': 'Sol Kalça', 'R Hip': 'Sağ Kalça',
+  'L Elbow': 'Sol Dirsek', 'R Elbow': 'Sağ Dirsek',
 }
 
+const GRAPH_WINDOW_SEC = 12
+
 type Mode = 'camera' | 'file'
+type PanelTab = 'angles' | 'metrics'
 type LoadState = 'loading-model' | 'requesting-camera' | 'waiting-file' | 'loading-file' | 'running' | 'error'
 
 export function LivePractice({ onClose }: LivePracticeProps) {
@@ -43,6 +49,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const fpsElRef = useRef<HTMLSpanElement | null>(null)
   const mirrorRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const metricsTrackerRef = useRef(new LiveMetricsTracker())
+  const metricsElRefs = useRef<Record<string, { mean?: HTMLSpanElement | null; vel?: HTMLSpanElement | null; rom?: HTMLSpanElement | null }>>({})
+  const lastGraphUpdateRef = useRef(0)
 
   const [mode, setMode] = useState<Mode>('camera')
   const [videoFile, setVideoFile] = useState<File | null>(null)
@@ -50,6 +59,8 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const [state, setState] = useState<LoadState>('loading-model')
   const [error, setError] = useState<string | null>(null)
   const [playing, setPlaying] = useState(true)
+  const [tab, setTab] = useState<PanelTab>('angles')
+  const [graphData, setGraphData] = useState<LiveGraphPoint[]>([])
 
   mirrorRef.current = mode === 'camera'
 
@@ -59,6 +70,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
     const video = videoRef.current
     if (video) { video.pause(); video.srcObject = null; video.removeAttribute('src'); video.load() }
+    // Yeni kaynak = yeni oturum; önceki kaynaktan kalan ROM/ortalama anlamsız.
+    metricsTrackerRef.current.reset()
+    setGraphData([])
   }, [])
 
   // ── Model yükleme — bir kere, mount'ta ────────────────────────────────────
@@ -182,6 +196,12 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         frameCount = 0
         fpsAccum = now
       }
+      // Grafik (recharts) React state gerektiriyor — DOM ref'lerinin aksine her karede
+      // setState çağırmak yerine 4Hz'e (250ms) throttle ediyoruz.
+      if (now - lastGraphUpdateRef.current > 250) {
+        lastGraphUpdateRef.current = now
+        setGraphData(metricsTrackerRef.current.getGraphData().slice())
+      }
       rafRef.current = requestAnimationFrame(loop)
     }
 
@@ -232,6 +252,20 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         for (const key of Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]) {
           const el = anglesElRef.current[key]
           if (el) el.textContent = Number.isNaN(angles[key]) ? '—' : `${angles[key].toFixed(0)}°`
+        }
+
+        // Çalışan metrik takibi (ortalama, açısal hız RMS, ROM) — bkz. lib/liveMetrics.ts.
+        // performance.now() kullanıyoruz: video.currentTime dosya modunda loop=true olduğunda
+        // döngü başına 0'a sıfırlanıyor, bu da hız hesabında sahte sıçrama yaratır.
+        metricsTrackerRef.current.push(angles, performance.now() / 1000)
+        const stats = metricsTrackerRef.current.getStats()
+        for (const key of Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]) {
+          const refs = metricsElRefs.current[key]
+          if (!refs) continue
+          const s: JointStat | undefined = stats[key]
+          if (refs.mean) refs.mean.textContent = s ? `${s.mean.toFixed(0)}°` : '—'
+          if (refs.vel) refs.vel.textContent = s ? `${s.angularVelocityRms.toFixed(0)}°/sn` : '—'
+          if (refs.rom) refs.rom.textContent = s && !Number.isNaN(s.romMin) ? `${s.romMin.toFixed(0)}°–${s.romMax.toFixed(0)}°` : '—'
         }
       }
       ctx.restore()
@@ -385,29 +419,90 @@ export function LivePractice({ onClose }: LivePracticeProps) {
           )}
         </div>
 
-        <div className="w-64 shrink-0 border-l border-slate-800 flex flex-col p-4 gap-3">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Canlı Açılar</div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {(Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]).map(key => (
-              <div key={key} className="rounded-lg px-3 py-2 bg-slate-800/60">
-                <div className="text-xs text-slate-500">{ANGLE_LABELS[key]}</div>
-                <span
-                  ref={el => { anglesElRef.current[key] = el }}
-                  className="text-sm font-bold font-mono text-slate-100"
-                >
-                  —
-                </span>
-              </div>
+        <div className="w-64 shrink-0 border-l border-slate-800 flex flex-col">
+          {/* Tabs */}
+          <div className="flex border-b border-slate-800 shrink-0 px-2 pt-1">
+            {([
+              { id: 'angles', label: 'Açılar' },
+              { id: 'metrics', label: 'Metrikler' },
+            ] as { id: PanelTab; label: string }[]).map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors rounded-t
+                  ${tab === t.id
+                    ? 'text-blue-400 border-b-2 border-blue-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                  }`}
+              >
+                {t.label}
+              </button>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500 leading-relaxed mt-2">
-            Bu mod tamamen tarayıcınızda çalışır — hiçbir görüntü sunucuya gönderilmez veya
-            kaydedilmez. "Video Dosyası" modunda seçtiğiniz dosya da sadece bu sekmede oynatılıp
-            işlenir, hiçbir yere yüklenmez. Doğru/yanlış icra sınıflandırması bu ilk sürümde
-            henüz yok; detaylı analiz + rapor için mevcut video yükleme akışını kullanın.
-          </p>
+
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+            {/* AÇILAR — CSS ile gizleniyor, ref'lerin kalıcı olması için hiç unmount edilmiyor */}
+            <div className={tab !== 'angles' ? 'hidden' : 'grid grid-cols-2 gap-1.5'}>
+              {(Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]).map(key => (
+                <div key={key} className="rounded-lg px-3 py-2 bg-slate-800/60">
+                  <div className="text-xs text-slate-500">{ANGLE_LABELS[key]}</div>
+                  <span
+                    ref={el => { anglesElRef.current[key] = el }}
+                    className="text-sm font-bold font-mono text-slate-100"
+                  >
+                    —
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* METRİKLER — aynı şekilde hep mount, CSS ile gizleniyor */}
+            <div className={tab !== 'metrics' ? 'hidden' : 'flex flex-col gap-1.5'}>
+              {(Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]).map(key => (
+                <div key={key} className="rounded-lg px-3 py-2 bg-slate-800/60">
+                  <div className="text-xs text-slate-500 mb-1">{ANGLE_LABELS[key]}</div>
+                  <div className="grid grid-cols-3 gap-1 text-center">
+                    <div>
+                      <div className="text-[9px] text-slate-600">Ort.</div>
+                      <span ref={el => { (metricsElRefs.current[key] ??= {}).mean = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                    </div>
+                    <div>
+                      <div className="text-[9px] text-slate-600">Açısal Hız</div>
+                      <span ref={el => { (metricsElRefs.current[key] ??= {}).vel = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                    </div>
+                    <div>
+                      <div className="text-[9px] text-slate-600">ROM</div>
+                      <span ref={el => { (metricsElRefs.current[key] ??= {}).rom = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => { metricsTrackerRef.current.reset(); setGraphData([]) }}
+                className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors mt-1"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Metrikleri Sıfırla
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed mt-auto pt-2">
+              Bu mod tamamen tarayıcınızda çalışır — hiçbir görüntü sunucuya gönderilmez veya
+              kaydedilmez. "Video Dosyası" modunda seçtiğiniz dosya da sadece bu sekmede oynatılıp
+              işlenir, hiçbir yere yüklenmez. Metrikler ve grafik oturum başından (veya son
+              sıfırlamadan) itibaren canlı hesaplanıyor. Doğru/yanlış icra sınıflandırması bu ilk
+              sürümde henüz yok; detaylı analiz + rapor için mevcut video yükleme akışını kullanın.
+            </p>
+          </div>
         </div>
       </div>
+
+      {state === 'running' && (
+        <div className="shrink-0 border-t border-slate-800 px-4 pt-2 pb-3">
+          <LiveAnglesGraph data={graphData} windowSec={GRAPH_WINDOW_SEC} />
+        </div>
+      )}
     </div>
   )
 }

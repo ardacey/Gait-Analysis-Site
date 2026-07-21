@@ -43,20 +43,28 @@ export interface LiveAngles {
   'R Knee': number
   'L Hip': number
   'R Hip': number
+  'L Elbow': number
+  'R Elbow': number
 }
 
-/** hip-knee-ankle / shoulder-hip-knee üçgenlerinden diz ve kalça açılarını hesaplar.
- * Bir bacaktaki nokta(lar) MIN_SCORE altındaysa o açı NaN döner (panelde '—' gösterilir). */
+/** hip-knee-ankle / shoulder-hip-knee / shoulder-elbow-wrist üçgenlerinden diz, kalça ve dirsek
+ * açılarını hesaplar. Ayak bileği açısı burada YOK — COCO-17'de ayak/parmak noktası bulunmuyor,
+ * bu offline HRNet-2D pipeline'ıyla (bkz. scripts/stgcn/feature_extraction_2d.py) aynı yapısal
+ * kısıt. Bir üçgendeki nokta(lar) MIN_SCORE altındaysa o açı NaN döner (panelde '—' gösterilir). */
 export function computeLiveAngles(byName: Record<string, Point2D | undefined>): LiveAngles {
   const ok = (...pts: (Point2D | undefined)[]) => pts.every(p => p && (p.score ?? 1) >= MIN_SCORE)
 
   const lHip = byName.left_hip, lKnee = byName.left_knee, lAnkle = byName.left_ankle, lShoulder = byName.left_shoulder
   const rHip = byName.right_hip, rKnee = byName.right_knee, rAnkle = byName.right_ankle, rShoulder = byName.right_shoulder
+  const lElbow = byName.left_elbow, lWrist = byName.left_wrist
+  const rElbow = byName.right_elbow, rWrist = byName.right_wrist
 
   return {
     'L Knee': ok(lHip, lKnee, lAnkle) ? angleDeg(lHip!, lKnee!, lAnkle!) : NaN,
     'R Knee': ok(rHip, rKnee, rAnkle) ? angleDeg(rHip!, rKnee!, rAnkle!) : NaN,
     'L Hip':  ok(lShoulder, lHip, lKnee) ? angleDeg(lShoulder!, lHip!, lKnee!) : NaN,
     'R Hip':  ok(rShoulder, rHip, rKnee) ? angleDeg(rShoulder!, rHip!, rKnee!) : NaN,
+    'L Elbow': ok(lShoulder, lElbow, lWrist) ? angleDeg(lShoulder!, lElbow!, lWrist!) : NaN,
+    'R Elbow': ok(rShoulder, rElbow, rWrist) ? angleDeg(rShoulder!, rElbow!, rWrist!) : NaN,
   }
 }
