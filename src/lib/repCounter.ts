@@ -11,8 +11,16 @@
 // tüm eklemlerde (diz/kalça/dirsek) VADİ = hareketin en bükülü/alt noktası. Her onaylanan vadi
 // bir tekrar olarak sayılır. Yürüyüşte L Knee + R Knee vadi toplamı = adım sayısı (bkz.
 // LivePractice.tsx); genel amaçlı olduğu için ileride egzersiz tekrarları için de kullanılabilir.
+//
+// Zamanlama: push()'a opsiyonel tSec verilirse, her onaylanan vadinin zaman damgası eklem
+// başına sınırlı bir pencerede (TIMESTAMP_BUFFER) tutulur — adım RİTMİ (adımlar arası süre
+// düzenliliği, sol/sağ süre simetrisi) hesaplamak için (bkz. lib/stepTiming.ts, gait-özel
+// yorumlama burada değil, o modülde). Bu sınıf yine jenerik kalıyor, sadece ham zaman damgalarını
+// dışarı veriyor.
 
 import type { LiveAngles } from './poseAngles'
+
+const TIMESTAMP_BUFFER = 12 // eklem başına tutulan son N vadi zaman damgası (~6 gait cycle)
 
 // Normal yürüyüşte diz açısı bir gait cycle'da İKİ kez küçülüyor: (1) topuk vuruşundan hemen
 // sonraki küçük "yük aktarımı" bükülmesi (duruş fazı, ~15-20°), (2) asıl salınım fazındaki büyük
@@ -27,12 +35,14 @@ interface JointRepState {
   direction: PivotDirection
   extreme: number // mevcut yönde şu ana kadar görülen en uç (aday pivot) değer
   reps: number
+  timestamps: number[] // onaylanan vadilerin zaman damgaları (sn), en fazla TIMESTAMP_BUFFER adet
 }
 
 export class RepCounter {
   private state: Partial<Record<keyof LiveAngles, JointRepState>> = {}
 
-  push(angles: LiveAngles): void {
+  /** tSec: performance.now()/1000 (opsiyonel — verilmezse zamanlama takip edilmez, sadece sayaç). */
+  push(angles: LiveAngles, tSec?: number): void {
     for (const key of Object.keys(angles) as (keyof LiveAngles)[]) {
       const val = angles[key]
       if (Number.isNaN(val)) continue
@@ -41,7 +51,7 @@ export class RepCounter {
       if (!s) {
         // İlk geçerli örnek — yön henüz bilinmiyor, 'up' varsayımıyla başla (ilk gerçek pivot
         // tespit edildiğinde kendini düzeltir, sayaç etkilenmez).
-        this.state[key] = { direction: 'up', extreme: val, reps: 0 }
+        this.state[key] = { direction: 'up', extreme: val, reps: 0, timestamps: [] }
         continue
       }
 
@@ -61,6 +71,10 @@ export class RepCounter {
           s.reps += 1
           s.direction = 'up'
           s.extreme = val
+          if (tSec != null) {
+            s.timestamps.push(tSec)
+            if (s.timestamps.length > TIMESTAMP_BUFFER) s.timestamps.shift()
+          }
         }
       }
     }
@@ -70,6 +84,15 @@ export class RepCounter {
     const out: Partial<Record<keyof LiveAngles, number>> = {}
     for (const key of Object.keys(this.state) as (keyof LiveAngles)[]) {
       out[key] = this.state[key]!.reps
+    }
+    return out
+  }
+
+  /** Eklem başına, en fazla TIMESTAMP_BUFFER son onaylanan vadi zaman damgası (sn, artan sırada). */
+  getTimestamps(): Partial<Record<keyof LiveAngles, number[]>> {
+    const out: Partial<Record<keyof LiveAngles, number[]>> = {}
+    for (const key of Object.keys(this.state) as (keyof LiveAngles)[]) {
+      out[key] = this.state[key]!.timestamps
     }
     return out
   }

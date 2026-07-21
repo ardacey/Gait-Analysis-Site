@@ -18,6 +18,7 @@ import type { FeedbackItem } from '../components/analysis/GaitFeedback'
 import type { LiveAngles } from './poseAngles'
 import type { JointStat } from './liveMetrics'
 import type { GaitStats } from './gaitMetrics'
+import type { StepTimingStats } from './stepTiming'
 
 // Bu kadar adım/tekrar birikmeden yorum üretme — oturum başında (2-3 kare) erken/gürültülü
 // bir "asimetri" ya da "yetersiz ROM" uyarısı vermeyelim.
@@ -38,6 +39,13 @@ export const SYMMETRY_GOOD_DEG = 8
 const CADENCE_LOW = 70
 const CADENCE_HIGH = 140
 
+// Adım ritmi (bkz. stepTiming.ts) — webcam/MoveNet hassasiyeti laboratuvar mocap'ından çok daha
+// düşük olduğu için klinik CV eşikleri (~%3-4) yerine kasıtlı olarak geniş bir bant kullanılıyor.
+const STEP_CV_WARN_PCT = 30 // bunun üstü belirgin ritim düzensizliği
+const STEP_CV_GOOD_PCT = 15
+const STEP_LR_DIFF_WARN_PCT = 25 // sol/sağ adım süresi farkı bunun üstündeyse bacak favorileme sinyali
+const STEP_LR_DIFF_GOOD_PCT = 12
+
 /** Bir eklemin oturum boyu hareket açıklığı (derece). Yetersiz veri varsa null. */
 export function romSpan(s: JointStat | undefined): number | null {
   if (!s || Number.isNaN(s.romMin) || Number.isNaN(s.romMax)) return null
@@ -48,6 +56,7 @@ export function buildLiveFeedback(
   stats: Partial<Record<keyof LiveAngles, JointStat>>,
   gait: GaitStats,
   stepCount: number,
+  stepTiming?: StepTimingStats,
 ): FeedbackItem[] {
   if (stepCount < MIN_STEPS_FOR_FEEDBACK) return []
   const items: FeedbackItem[] = []
@@ -123,6 +132,34 @@ export function buildLiveFeedback(
       items.push({
         type: 'good', metric: 'cadence', label: 'Kadans (yaklaşık)', value: gait.cadence, unit: 'adım/dk',
         message: 'Adım hızınız normal aralıkta.',
+      })
+    }
+  }
+
+  // Adım ritmi (bkz. stepTiming.ts) — düzensizlik (CV) ve sol/sağ adım süresi farkı.
+  if (stepTiming?.stepTimeCvPct != null) {
+    if (stepTiming.stepTimeCvPct > STEP_CV_WARN_PCT) {
+      items.push({
+        type: 'warning', metric: 'step_rhythm', label: 'Adım Ritmi', value: stepTiming.stepTimeCvPct, unit: '%',
+        message: 'Adımlarınız arasındaki süre düzensiz görünüyor — daha sabit bir tempoda yürümeyi deneyin.',
+      })
+    } else if (stepTiming.stepTimeCvPct <= STEP_CV_GOOD_PCT) {
+      items.push({
+        type: 'good', metric: 'step_rhythm', label: 'Adım Ritmi', value: stepTiming.stepTimeCvPct, unit: '%',
+        message: 'Adımlarınız düzenli bir ritimde.',
+      })
+    }
+  }
+  if (stepTiming?.lrDiffPct != null) {
+    if (stepTiming.lrDiffPct > STEP_LR_DIFF_WARN_PCT) {
+      items.push({
+        type: 'warning', metric: 'step_time_symmetry', label: 'Adım Süresi Simetrisi', value: stepTiming.lrDiffPct, unit: '%',
+        message: 'Bir bacağınızı diğerinden belirgin daha uzun süre kullanıyor olabilirsiniz.',
+      })
+    } else if (stepTiming.lrDiffPct <= STEP_LR_DIFF_GOOD_PCT) {
+      items.push({
+        type: 'good', metric: 'step_time_symmetry', label: 'Adım Süresi Simetrisi', value: stepTiming.lrDiffPct, unit: '%',
+        message: 'Sol ve sağ adım süreleriniz dengeli.',
       })
     }
   }

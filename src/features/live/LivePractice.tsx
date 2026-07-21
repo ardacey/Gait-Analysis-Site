@@ -11,7 +11,8 @@
 //  - Klinik normal aralık dışına çıkınca kırmızı/sarı renk kodlaması (bkz. lib/angleRanges.ts,
 //    analiz sayfasıyla AYNI eşikler).
 //  - Metrikler sekmesi: çalışan ortalama/açısal hız RMS/ROM (bkz. lib/liveMetrics.ts) + son
-//    12sn'lik kayan grafik + sol/sağ simetri (diz ROM farkı, kalça ortalama farkı).
+//    12sn'lik kayan grafik + sol/sağ simetri (diz ROM farkı, kalça ortalama farkı, adım süresi
+//    farkı) + adım ritmi (ort. adım süresi + düzensizlik, bkz. lib/stepTiming.ts).
 //  - Tepe-vadi tabanlı adım tespiti (bkz. lib/repCounter.ts) — video üzerinde canlı adım sayacı.
 //  - YAKLAŞIK kadans/adım uzunluğu/yürüyüş hızı (bkz. lib/gaitMetrics.ts) — piksel->metre ölçek
 //    tahminine dayanıyor, MeTRAbs'in 3D+derinlik kesinliğiyle eş değer DEĞİL.
@@ -42,6 +43,7 @@ import { RepCounter } from '../../lib/repCounter'
 import { GaitMetricsTracker } from '../../lib/gaitMetrics'
 import { buildLiveFeedback, romSpan, MIN_STEPS_FOR_FEEDBACK } from '../../lib/liveFeedback'
 import { GaitFeedback, type FeedbackItem } from '../../components/analysis/GaitFeedback'
+import { computeStepTimingStats, type StepTimingStats } from '../../lib/stepTiming'
 
 interface LivePracticeProps {
   onClose: () => void
@@ -77,8 +79,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const repCountElRef = useRef<HTMLSpanElement | null>(null)
   const gaitTrackerRef = useRef(new GaitMetricsTracker())
   const gaitElRefs = useRef<{ cadence?: HTMLSpanElement | null; stepLength?: HTMLSpanElement | null; speed?: HTMLSpanElement | null }>({})
-  const symmetryElRefs = useRef<{ knee?: HTMLSpanElement | null; hip?: HTMLSpanElement | null }>({})
+  const symmetryElRefs = useRef<{ knee?: HTMLSpanElement | null; hip?: HTMLSpanElement | null; stepTime?: HTMLSpanElement | null }>({})
+  const rhythmElRefs = useRef<{ meanTime?: HTMLSpanElement | null; cv?: HTMLSpanElement | null }>({})
   const stepCountRef = useRef(0)
+  const stepTimingRef = useRef<StepTimingStats>({ stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null })
   const lastFeedbackUpdateRef = useRef(0)
 
   const [mode, setMode] = useState<Mode>('camera')
@@ -107,6 +111,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     repCounterRef.current.reset()
     gaitTrackerRef.current.reset()
     stepCountRef.current = 0
+    stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
     setGraphData([])
     setLiveFeedback([])
   }, [])
@@ -242,7 +247,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       // yeniden hesaplanması yeterli, kart metinleri her karede değişecek kadar oynak değil.
       if (now - lastFeedbackUpdateRef.current > 1000) {
         lastFeedbackUpdateRef.current = now
-        setLiveFeedback(buildLiveFeedback(metricsTrackerRef.current.getStats(), gaitTrackerRef.current.getStats(), stepCountRef.current))
+        setLiveFeedback(buildLiveFeedback(
+          metricsTrackerRef.current.getStats(), gaitTrackerRef.current.getStats(), stepCountRef.current, stepTimingRef.current,
+        ))
       }
       rafRef.current = requestAnimationFrame(loop)
     }
@@ -336,11 +343,26 @@ export function LivePractice({ onClose }: LivePracticeProps) {
 
         // Tepe-vadi tabanlı adım tespiti (bkz. lib/repCounter.ts) — bir dizin en çok büktüğü
         // an (salınım fazı ortası) o bacağın adımının vekili. Sol+sağ diz toplamı = adım sayısı.
-        repCounterRef.current.push(angles)
+        const tSec = performance.now() / 1000
+        repCounterRef.current.push(angles, tSec)
         const reps = repCounterRef.current.getReps()
         const stepCount = (reps['L Knee'] ?? 0) + (reps['R Knee'] ?? 0)
         stepCountRef.current = stepCount
         if (repCountElRef.current) repCountElRef.current.textContent = String(stepCount)
+
+        // Adım ritmi (bkz. lib/stepTiming.ts) — adımlar arası süre düzenliliği + sol/sağ süre farkı.
+        const timestamps = repCounterRef.current.getTimestamps()
+        const stepTiming = computeStepTimingStats(timestamps['L Knee'] ?? [], timestamps['R Knee'] ?? [])
+        stepTimingRef.current = stepTiming
+        if (rhythmElRefs.current.meanTime) {
+          rhythmElRefs.current.meanTime.textContent = stepTiming.stepTimeMeanSec != null ? `${stepTiming.stepTimeMeanSec.toFixed(2)}sn` : '—'
+        }
+        if (rhythmElRefs.current.cv) {
+          rhythmElRefs.current.cv.textContent = stepTiming.stepTimeCvPct != null ? `%${stepTiming.stepTimeCvPct.toFixed(0)}` : '—'
+        }
+        if (symmetryElRefs.current.stepTime) {
+          symmetryElRefs.current.stepTime.textContent = stepTiming.lrDiffPct != null ? `%${stepTiming.lrDiffPct.toFixed(0)}` : '—'
+        }
 
         // Yaklaşık yürüyüş metrikleri (kadans/adım uzunluğu/hız) — bkz. lib/gaitMetrics.ts.
         const lHipG = byName.left_hip, rHipG = byName.right_hip
@@ -582,10 +604,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                 </div>
               </div>
 
-              {/* Sol/sağ simetri (mutlak derece farkı) — bkz. lib/liveFeedback.ts romSpan */}
+              {/* Sol/sağ simetri — bkz. lib/liveFeedback.ts romSpan, lib/stepTiming.ts */}
               <div className="rounded-lg px-3 py-2 bg-purple-950/30 border border-purple-900/40">
                 <div className="text-[9px] text-purple-400/80 uppercase tracking-wide mb-1">Simetri (Sol-Sağ Fark)</div>
-                <div className="grid grid-cols-2 gap-1 text-center">
+                <div className="grid grid-cols-3 gap-1 text-center">
                   <div>
                     <div className="text-[9px] text-slate-600">Diz ROM</div>
                     <span ref={el => { symmetryElRefs.current.knee = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
@@ -593,6 +615,26 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   <div>
                     <div className="text-[9px] text-slate-600">Kalça Ort.</div>
                     <span ref={el => { symmetryElRefs.current.hip = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-600">Adım Süresi</div>
+                    <span ref={el => { symmetryElRefs.current.stepTime = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Adım ritmi (bkz. lib/stepTiming.ts) — düzenlilik göstergesi, YAKLAŞIK (2D/webcam
+                  hassasiyeti mocap ile kıyaslanamaz, sadece oturum-içi göreli bir sinyal). */}
+              <div className="rounded-lg px-3 py-2 bg-teal-950/30 border border-teal-900/40">
+                <div className="text-[9px] text-teal-400/80 uppercase tracking-wide mb-1">Adım Ritmi</div>
+                <div className="grid grid-cols-2 gap-1 text-center">
+                  <div>
+                    <div className="text-[9px] text-slate-600">Ort. Süre</div>
+                    <span ref={el => { rhythmElRefs.current.meanTime = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-600">Düzensizlik</div>
+                    <span ref={el => { rhythmElRefs.current.cv = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
                   </div>
                 </div>
               </div>
@@ -623,6 +665,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   repCounterRef.current.reset()
                   gaitTrackerRef.current.reset()
                   stepCountRef.current = 0
+                  stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
                   setGraphData([])
                   setLiveFeedback([])
                   if (repCountElRef.current) repCountElRef.current.textContent = '0'
@@ -631,6 +674,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   if (gaitElRefs.current.speed) gaitElRefs.current.speed.textContent = '—'
                   if (symmetryElRefs.current.knee) symmetryElRefs.current.knee.textContent = '—'
                   if (symmetryElRefs.current.hip) symmetryElRefs.current.hip.textContent = '—'
+                  if (symmetryElRefs.current.stepTime) symmetryElRefs.current.stepTime.textContent = '—'
+                  if (rhythmElRefs.current.meanTime) rhythmElRefs.current.meanTime.textContent = '—'
+                  if (rhythmElRefs.current.cv) rhythmElRefs.current.cv.textContent = '—'
                 }}
                 className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors mt-1"
               >
