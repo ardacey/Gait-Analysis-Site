@@ -38,6 +38,25 @@ export function angleDeg(a: Point2D, b: Point2D, c: Point2D): number {
   return Math.acos(cos) * (180 / Math.PI)
 }
 
+/** İki nokta arasındaki orta nokta. */
+export function midpoint(a: Point2D, b: Point2D): Point2D {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+/** Omuz-orta ve kalça-orta arası piksel mesafesi — piksel->metre ölçek tahmini için
+ * (bkz. lib/gaitMetrics.ts), scripts/stgcn/feature_extraction_2d.py'deki
+ * _frame_torso_length_px ile AYNI yöntem (tipik yetişkin gövde uzunluğu ~0.5m varsayımı
+ * gaitMetrics.ts tarafında uygulanıyor). Güvenilir nokta yoksa null döner. */
+export function torsoLengthPx(byName: Record<string, Point2D | undefined>): number | null {
+  const ls = byName.left_shoulder, rs = byName.right_shoulder
+  const lh = byName.left_hip, rh = byName.right_hip
+  const ok = (...pts: (Point2D | undefined)[]) => pts.every(p => p && (p.score ?? 1) >= MIN_SCORE)
+  if (!ok(ls, rs, lh, rh)) return null
+  const shMid = midpoint(ls!, rs!)
+  const hipMid = midpoint(lh!, rh!)
+  return Math.hypot(shMid.x - hipMid.x, shMid.y - hipMid.y)
+}
+
 export interface LiveAngles {
   'L Knee': number
   'R Knee': number

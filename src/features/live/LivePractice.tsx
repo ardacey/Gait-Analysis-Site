@@ -1,11 +1,23 @@
-// Canlı Pratik — tamamen istemci-taraflı (tarayıcı) gerçek-zamanlı poz izleme demosu.
+// Canlı Pratik — tamamen istemci-taraflı (tarayıcı) gerçek-zamanlı YÜRÜYÜŞ (gait) izleme.
 //
-// Kapsam (bkz. docs/scgnet-arastirma-raporu.md, Bölüm 4): TRUBA/SLURM batch mimarisi
-// gerçek-zamanlıya yapısal olarak uygun değil, bu yüzden bu mod TRUBA'ya hiç dokunmuyor —
-// görüntü MoveNet (TensorFlow.js, WebGL backend) ile tamamen tarayıcıda işleniyor, hiçbir
-// video/frame sunucuya gitmiyor. İlk faz: sadece iskelet overlay + canlı açı sayıları.
-// ML tabanlı canlı doğru/yanlış sınıflandırması kapsam dışı (nedensel bir model gerektirir,
-// ayrı bir eğitim işi — bkz. rapor).
+// Kapsam (bkz. docs/scgnet-arastirma-raporu.md Bölüm 4, docs/real-time-arastirma-raporu.md):
+// TRUBA/SLURM batch mimarisi gerçek-zamanlıya yapısal olarak uygun değil, bu yüzden bu mod
+// TRUBA'ya hiç dokunmuyor — görüntü MoveNet (TensorFlow.js, WebGL backend) ile tamamen
+// tarayıcıda işleniyor, hiçbir video/frame sunucuya gitmiyor.
+//
+// Şu an sağlanan canlı özellikler:
+//  - İskelet overlay + açı paneli (diz/kalça/dirsek — ayak bileği açısı COCO-17'de ayak/parmak
+//    noktası olmadığı için yok, offline HRNet-2D pipeline'ıyla aynı kısıt).
+//  - Klinik normal aralık dışına çıkınca kırmızı/sarı renk kodlaması (bkz. lib/angleRanges.ts,
+//    analiz sayfasıyla AYNI eşikler).
+//  - Metrikler sekmesi: çalışan ortalama/açısal hız RMS/ROM (bkz. lib/liveMetrics.ts) + son
+//    12sn'lik kayan grafik.
+//  - Tepe-vadi tabanlı adım tespiti (bkz. lib/repCounter.ts) — video üzerinde canlı adım sayacı.
+//  - YAKLAŞIK kadans/adım uzunluğu/yürüyüş hızı (bkz. lib/gaitMetrics.ts) — piksel->metre ölçek
+//    tahminine dayanıyor, MeTRAbs'in 3D+derinlik kesinliğiyle eş değer DEĞİL.
+//
+// ML tabanlı canlı doğru/yanlış sınıflandırması henüz kapsam dışı (nedensel bir model veya
+// mevcut ST-GCN'in tarayıcıya taşınmasını gerektirir — bkz. rapor Bölüm 3-4).
 //
 // İki kaynak modu var:
 //  - 'camera': webcam, canlı — orijinal kullanım senaryosu.
@@ -14,14 +26,17 @@
 //    karşısında durmak zorunda kalmadan, önceden kaydedilmiş bir videoyla karşılaştırma/test
 //    yapabilmek. Kayıt/analiz sunucuya gitmiyor, sadece bu ekranda oynatılıyor.
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { X, Loader2, AlertCircle, Camera, Gauge, Video, Upload, Play, Pause, RotateCcw, RefreshCw } from 'lucide-react'
+import { X, Loader2, AlertCircle, Camera, Gauge, Video, Upload, Play, Pause, RotateCcw, RefreshCw, Footprints } from 'lucide-react'
 import type * as PoseDetectionNS from '@tensorflow-models/pose-detection'
 import {
   MOVENET_KEYPOINT_NAMES, SKELETON_EDGES, MIN_SCORE,
-  computeLiveAngles, type Point2D, type LiveAngles,
+  computeLiveAngles, torsoLengthPx, midpoint, type Point2D, type LiveAngles,
 } from '../../lib/poseAngles'
 import { LiveMetricsTracker, type JointStat, type LiveGraphPoint } from '../../lib/liveMetrics'
 import { LiveAnglesGraph } from './LiveAnglesGraph'
+import { getAngleColor } from '../../lib/angleRanges'
+import { RepCounter } from '../../lib/repCounter'
+import { GaitMetricsTracker } from '../../lib/gaitMetrics'
 
 interface LivePracticeProps {
   onClose: () => void
@@ -46,12 +61,17 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const detectorRef = useRef<PoseDetectionNS.PoseDetector | null>(null)
   const rafRef = useRef<number | null>(null)
   const anglesElRef = useRef<Record<string, HTMLSpanElement | null>>({})
+  const angleDivRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const fpsElRef = useRef<HTMLSpanElement | null>(null)
   const mirrorRef = useRef(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const metricsTrackerRef = useRef(new LiveMetricsTracker())
   const metricsElRefs = useRef<Record<string, { mean?: HTMLSpanElement | null; vel?: HTMLSpanElement | null; rom?: HTMLSpanElement | null }>>({})
   const lastGraphUpdateRef = useRef(0)
+  const repCounterRef = useRef(new RepCounter())
+  const repCountElRef = useRef<HTMLSpanElement | null>(null)
+  const gaitTrackerRef = useRef(new GaitMetricsTracker())
+  const gaitElRefs = useRef<{ cadence?: HTMLSpanElement | null; stepLength?: HTMLSpanElement | null; speed?: HTMLSpanElement | null }>({})
 
   const [mode, setMode] = useState<Mode>('camera')
   const [videoFile, setVideoFile] = useState<File | null>(null)
@@ -70,8 +90,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
     const video = videoRef.current
     if (video) { video.pause(); video.srcObject = null; video.removeAttribute('src'); video.load() }
-    // Yeni kaynak = yeni oturum; önceki kaynaktan kalan ROM/ortalama anlamsız.
+    // Yeni kaynak = yeni oturum; önceki kaynaktan kalan ROM/ortalama/adım sayısı anlamsız.
     metricsTrackerRef.current.reset()
+    repCounterRef.current.reset()
+    gaitTrackerRef.current.reset()
     setGraphData([])
   }, [])
 
@@ -250,8 +272,17 @@ export function LivePractice({ onClose }: LivePracticeProps) {
 
         const angles = computeLiveAngles(byName)
         for (const key of Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]) {
+          const val = angles[key]
           const el = anglesElRef.current[key]
-          if (el) el.textContent = Number.isNaN(angles[key]) ? '—' : `${angles[key].toFixed(0)}°`
+          if (el) el.textContent = Number.isNaN(val) ? '—' : `${val.toFixed(0)}°`
+          // Klinik normal aralık dışına çıkınca kırmızı/sarı — analiz sayfasıyla (AnalysisViewer)
+          // aynı eşikler, bkz. lib/angleRanges.ts. NaN (takip kaybı) her zaman nötr renge düşer.
+          const div = angleDivRefs.current[key]
+          if (div) {
+            const { bg, text } = getAngleColor(key, val)
+            div.className = `rounded-lg px-3 py-2 transition-colors ${bg}`
+            if (el) el.className = `text-sm font-bold font-mono ${text}`
+          }
         }
 
         // Çalışan metrik takibi (ortalama, açısal hız RMS, ROM) — bkz. lib/liveMetrics.ts.
@@ -267,6 +298,24 @@ export function LivePractice({ onClose }: LivePracticeProps) {
           if (refs.vel) refs.vel.textContent = s ? `${s.angularVelocityRms.toFixed(0)}°/sn` : '—'
           if (refs.rom) refs.rom.textContent = s && !Number.isNaN(s.romMin) ? `${s.romMin.toFixed(0)}°–${s.romMax.toFixed(0)}°` : '—'
         }
+
+        // Tepe-vadi tabanlı adım tespiti (bkz. lib/repCounter.ts) — bir dizin en çok büktüğü
+        // an (salınım fazı ortası) o bacağın adımının vekili. Sol+sağ diz toplamı = adım sayısı.
+        repCounterRef.current.push(angles)
+        const reps = repCounterRef.current.getReps()
+        const stepCount = (reps['L Knee'] ?? 0) + (reps['R Knee'] ?? 0)
+        if (repCountElRef.current) repCountElRef.current.textContent = String(stepCount)
+
+        // Yaklaşık yürüyüş metrikleri (kadans/adım uzunluğu/hız) — bkz. lib/gaitMetrics.ts.
+        const lHipG = byName.left_hip, rHipG = byName.right_hip
+        const hipMidX = (lHipG && (lHipG.score ?? 1) >= MIN_SCORE) && (rHipG && (rHipG.score ?? 1) >= MIN_SCORE)
+          ? midpoint(lHipG, rHipG).x
+          : null
+        gaitTrackerRef.current.pushFrame(hipMidX, torsoLengthPx(byName), performance.now() / 1000, stepCount)
+        const gaitStats = gaitTrackerRef.current.getStats()
+        if (gaitElRefs.current.cadence) gaitElRefs.current.cadence.textContent = gaitStats.cadence != null ? gaitStats.cadence.toFixed(0) : '—'
+        if (gaitElRefs.current.stepLength) gaitElRefs.current.stepLength.textContent = gaitStats.stepLength != null ? `${gaitStats.stepLength.toFixed(2)}m` : '—'
+        if (gaitElRefs.current.speed) gaitElRefs.current.speed.textContent = gaitStats.walkingSpeed != null ? `${gaitStats.walkingSpeed.toFixed(2)}m/sn` : '—'
       }
       ctx.restore()
     }
@@ -404,6 +453,13 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               <span ref={fpsElRef}>0</span> fps
             </div>
           )}
+          {state === 'running' && (
+            <div className="absolute top-3 right-3 flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-slate-900/70 text-slate-300">
+              <Footprints className="w-3.5 h-3.5 text-blue-400" />
+              <span ref={repCountElRef} className="text-base font-bold text-white leading-none">0</span>
+              <span className="text-slate-400">adım</span>
+            </div>
+          )}
           {state === 'running' && mode === 'file' && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/80 rounded-lg p-1">
               <button type="button" onClick={togglePlay} title={playing ? 'Duraklat' : 'Oynat'}
@@ -445,7 +501,11 @@ export function LivePractice({ onClose }: LivePracticeProps) {
             {/* AÇILAR — CSS ile gizleniyor, ref'lerin kalıcı olması için hiç unmount edilmiyor */}
             <div className={tab !== 'angles' ? 'hidden' : 'grid grid-cols-2 gap-1.5'}>
               {(Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]).map(key => (
-                <div key={key} className="rounded-lg px-3 py-2 bg-slate-800/60">
+                <div
+                  key={key}
+                  ref={el => { angleDivRefs.current[key] = el }}
+                  className="rounded-lg px-3 py-2 bg-slate-800/60 transition-colors"
+                >
                   <div className="text-xs text-slate-500">{ANGLE_LABELS[key]}</div>
                   <span
                     ref={el => { anglesElRef.current[key] = el }}
@@ -459,6 +519,24 @@ export function LivePractice({ onClose }: LivePracticeProps) {
 
             {/* METRİKLER — aynı şekilde hep mount, CSS ile gizleniyor */}
             <div className={tab !== 'metrics' ? 'hidden' : 'flex flex-col gap-1.5'}>
+              {/* Yürüyüş özeti (yaklaşık) — bkz. lib/gaitMetrics.ts, kadans/adım/hız */}
+              <div className="rounded-lg px-3 py-2 bg-blue-950/30 border border-blue-900/40">
+                <div className="text-[9px] text-blue-400/80 uppercase tracking-wide mb-1">Yürüyüş (yaklaşık)</div>
+                <div className="grid grid-cols-3 gap-1 text-center">
+                  <div>
+                    <div className="text-[9px] text-slate-600">Kadans</div>
+                    <span ref={el => { gaitElRefs.current.cadence = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-600">Adım Uz.</div>
+                    <span ref={el => { gaitElRefs.current.stepLength = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-600">Hız</div>
+                    <span ref={el => { gaitElRefs.current.speed = el }} className="text-xs font-bold font-mono text-slate-100">—</span>
+                  </div>
+                </div>
+              </div>
               {(Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]).map(key => (
                 <div key={key} className="rounded-lg px-3 py-2 bg-slate-800/60">
                   <div className="text-xs text-slate-500 mb-1">{ANGLE_LABELS[key]}</div>
@@ -480,19 +558,30 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               ))}
               <button
                 type="button"
-                onClick={() => { metricsTrackerRef.current.reset(); setGraphData([]) }}
+                onClick={() => {
+                  metricsTrackerRef.current.reset()
+                  repCounterRef.current.reset()
+                  gaitTrackerRef.current.reset()
+                  setGraphData([])
+                  if (repCountElRef.current) repCountElRef.current.textContent = '0'
+                  if (gaitElRefs.current.cadence) gaitElRefs.current.cadence.textContent = '—'
+                  if (gaitElRefs.current.stepLength) gaitElRefs.current.stepLength.textContent = '—'
+                  if (gaitElRefs.current.speed) gaitElRefs.current.speed.textContent = '—'
+                }}
                 className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors mt-1"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Metrikleri Sıfırla
+                <RefreshCw className="w-3.5 h-3.5" /> Metrikleri ve Sayacı Sıfırla
               </button>
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed mt-auto pt-2">
               Bu mod tamamen tarayıcınızda çalışır — hiçbir görüntü sunucuya gönderilmez veya
               kaydedilmez. "Video Dosyası" modunda seçtiğiniz dosya da sadece bu sekmede oynatılıp
-              işlenir, hiçbir yere yüklenmez. Metrikler ve grafik oturum başından (veya son
-              sıfırlamadan) itibaren canlı hesaplanıyor. Doğru/yanlış icra sınıflandırması bu ilk
-              sürümde henüz yok; detaylı analiz + rapor için mevcut video yükleme akışını kullanın.
+              işlenir, hiçbir yere yüklenmez. Metrikler, adım sayacı ve grafik oturum başından
+              (veya son sıfırlamadan) itibaren canlı hesaplanıyor. Kadans/adım uzunluğu/hız
+              YAKLAŞIK değerlerdir (derinlik yok, gövde uzunluğu ≈0.5m varsayımı, kameranın
+              yandan çektiği varsayılıyor) — kesin ölçüm için mevcut video yükleme akışını
+              kullanın. Doğru/yanlış icra sınıflandırması bu ilk sürümde henüz yok.
             </p>
           </div>
         </div>

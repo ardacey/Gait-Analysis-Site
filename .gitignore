@@ -26,6 +26,11 @@ coverage
 .netlify
 .turbo
 
+# Python (scripts/stgcn)
+__pycache__/
+*.pyc
+*.npz
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -36,3 +41,7 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+
+docs
+scripts
+results

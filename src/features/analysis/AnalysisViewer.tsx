@@ -7,6 +7,7 @@ import type { AnalysisData, AnalysisFrame, FeedbackItem, VideoRecord } from '../
 import { GaitFeedback } from '../../components/analysis/GaitFeedback'
 import { Skeleton3D, type Skeleton3DHandle } from './Skeleton3D'
 import { AnglesGraph } from './AnglesGraph'
+import { getAngleColor } from '../../lib/angleRanges'
 
 interface AnalysisViewerProps {
   video: VideoRecord
@@ -34,28 +35,6 @@ const ANGLE_LABELS: Record<string, string> = {
   'L Hip': 'Sol Kalça', 'R Hip': 'Sağ Kalça',
   'L Ankle': 'Sol Ayak', 'R Ankle': 'Sağ Ayak',
   'L Elbow': 'Sol Dirsek', 'R Elbow': 'Sağ Dirsek',
-}
-
-// Clinical normal gait ranges per joint
-const ANGLE_RANGES: Record<string, { low: number; high: number; warnLow: number; warnHigh: number }> = {
-  'L Knee':  { warnLow: 90,  low: 80,  high: 185, warnHigh: 185 },
-  'R Knee':  { warnLow: 90,  low: 80,  high: 185, warnHigh: 185 },
-  'L Hip':   { warnLow: 130, low: 120, high: 220,  warnHigh: 225 },
-  'R Hip':   { warnLow: 130, low: 120, high: 220,  warnHigh: 225 },
-  'L Ankle': { warnLow: 55,  low: 45,  high: 125, warnHigh: 130 },
-  'R Ankle': { warnLow: 55,  low: 45,  high: 125, warnHigh: 130 },
-  'L Elbow': { warnLow: 70,  low: 60,  high: 185, warnHigh: 185 },
-  'R Elbow': { warnLow: 70,  low: 60,  high: 185, warnHigh: 185 },
-}
-
-function getAngleColor(key: string, val: number) {
-  const r = ANGLE_RANGES[key]
-  if (!r) return { bg: 'bg-slate-800/60', text: 'text-slate-100' }
-  if (val < r.low || val > r.high)
-    return { bg: 'bg-red-900/30', text: 'text-red-300' }
-  if (val < r.warnLow || val > r.warnHigh)
-    return { bg: 'bg-yellow-900/20', text: 'text-yellow-300' }
-  return { bg: 'bg-slate-800/60', text: 'text-slate-100' }
 }
 
 const METRIC_LABELS: Record<string, string> = {
