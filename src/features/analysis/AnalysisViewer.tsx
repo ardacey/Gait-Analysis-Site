@@ -441,10 +441,10 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
   }, [data])
 
   const frame: AnalysisFrame | undefined = data?.frames[frameIdx]
-  // hrnet_scgnet pipeline'ında gait_phase her zaman 'n/a' (bkz. feature_extraction_2d.py) —
+  // hrnet_stgcn pipeline'ında gait_phase her zaman 'n/a' (bkz. feature_extraction_2d.py) —
   // bu videolar için anlamsız faz rozeti/dağılımı yerine ST-GCN sınıflandırma sonucunu gösteriyoruz.
-  const isHrnetScgnet = video.analysis_method === 'hrnet_scgnet'
-  const phaseInfo = frame && !isHrnetScgnet
+  const isHrnetStgcn = video.analysis_method === 'hrnet_stgcn'
+  const phaseInfo = frame && !isHrnetStgcn
     ? (GAIT_PHASE_LABELS[frame.gait_phase] ?? { label: frame.gait_phase, color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' })
     : null
   const classification = data?.classification
@@ -510,7 +510,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                 jointNames={data.joint_names}
                 edges={data.edges}
                 angles={frame.angles as unknown as Record<string, number>}
-                flat={isHrnetScgnet}
+                flat={isHrnetStgcn}
               />
             </div>
             <AnglePanel
@@ -544,8 +544,8 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               className="w-full accent-blue-500 h-1.5 cursor-pointer"
             />
 
-            {/* ST-GCN pencere-bazlı doğruluk zaman çizelgesi (hrnet_scgnet için, faz dağılımı yerine) */}
-            {isHrnetScgnet && classification?.windows && classification.windows.length > 0 && (
+            {/* ST-GCN pencere-bazlı doğruluk zaman çizelgesi (hrnet_stgcn için, faz dağılımı yerine) */}
+            {isHrnetStgcn && classification?.windows && classification.windows.length > 0 && (
               <div className="flex flex-col gap-1">
                 <div className="relative h-2 rounded overflow-hidden w-full bg-slate-800">
                   {classification.windows.map((w, i) => {
@@ -570,7 +570,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
             )}
 
             {/* Gait phase distribution bar */}
-            {!isHrnetScgnet && phaseDist.length > 0 && (
+            {!isHrnetStgcn && phaseDist.length > 0 && (
               <div className="flex flex-col gap-1">
                 <div className="flex h-2 rounded overflow-hidden w-full">
                   {phaseDist.map(({ phase, pct }) => (

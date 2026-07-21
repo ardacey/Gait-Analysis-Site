@@ -25,7 +25,7 @@ interface DashboardProps {
 
 const METHOD_LABELS: Record<AnalysisMethod, { short: string; badge: string }> = {
   metrabs:      { short: '3D · MeTRAbs',       badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  hrnet_scgnet: { short: '2D · HRNet+SCGNet',  badge: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' },
+  hrnet_stgcn:  { short: '2D · HRNet+ST-GCN',  badge: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' },
 }
 
 function StatusBadge({ jobStatus }: { jobStatus: string | null }) {
@@ -158,11 +158,11 @@ export function Dashboard({
                 <button
                   type="button"
                   disabled={isUploading}
-                  onClick={() => setMethod('hrnet_scgnet')}
+                  onClick={() => setMethod('hrnet_stgcn')}
                   className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors
-                    ${method === 'hrnet_scgnet' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                    ${method === 'hrnet_stgcn' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                 >
-                  <Boxes className="w-3.5 h-3.5" /> 2D Analiz (HRNet + SCGNet)
+                  <Boxes className="w-3.5 h-3.5" /> 2D Analiz (HRNet + ST-GCN)
                 </button>
               </div>
             </div>

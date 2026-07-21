@@ -1,5 +1,5 @@
-export type AnalysisMethod = 'metrabs' | 'hrnet_scgnet'
-export type ScgnetLabel = 'correct' | 'incorrect'
+export type AnalysisMethod = 'metrabs' | 'hrnet_stgcn'
+export type StgcnLabel = 'correct' | 'incorrect'
 
 export interface VideoRecord {
   id: number
@@ -14,8 +14,8 @@ export interface VideoRecord {
   features_url: string | null
   analysis_url: string | null
   analysis_method: AnalysisMethod
-  scgnet_label: ScgnetLabel | null
-  scgnet_confidence: number | null
+  stgcn_label: StgcnLabel | null
+  stgcn_confidence: number | null
 }
 
 export type UserRole = 'patient' | 'doctor'
@@ -49,7 +49,7 @@ export type { FeedbackItem }
 export interface ClassificationWindow {
   start_frame: number
   end_frame: number
-  label: ScgnetLabel
+  label: StgcnLabel
   confidence: number
 }
 
@@ -62,8 +62,10 @@ export interface AnalysisData {
   summary: Record<string, number>
   feedback?: FeedbackItem[]
   classification?: {
-    label: ScgnetLabel
+    label: StgcnLabel
     confidence: number
+    // 'scgnet': eski model, geçmiş analizlerde (migration öncesi) gerçekten kullanıldı — tarihsel
+    // değer olarak korunuyor. 'stgcn': mevcut/güncel model.
     model: 'scgnet' | 'stgcn'
     windows?: ClassificationWindow[]
   }
