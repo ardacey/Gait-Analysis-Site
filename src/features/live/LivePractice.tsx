@@ -56,6 +56,16 @@ const ANGLE_LABELS: Record<keyof LiveAngles, string> = {
 
 const GRAPH_WINDOW_SEC = 12
 
+// Bazı ağlarda (bkz. model yükleme effect'i) harici bir fetch hiç hata vermeden süresiz askıda
+// kalabiliyor — bu yardımcı, promise'i bir süre sonra reddedip kullanıcının "Tekrar Dene"
+// görmesini sağlıyor (aksi halde spinner sonsuza kadar döner).
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ])
+}
+
 type Mode = 'camera' | 'file'
 type PanelTab = 'angles' | 'metrics' | 'feedback'
 type LoadState = 'loading-model' | 'requesting-camera' | 'waiting-file' | 'loading-file' | 'running' | 'error'
@@ -116,7 +126,8 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     setLiveFeedback([])
   }, [])
 
-  // ── Model yükleme — bir kere, mount'ta ────────────────────────────────────
+  // ── Model yükleme — mount'ta, retryKey her artışta da (bkz. kaynak-bağlama
+  //    effect'indeki AYNI mekanizma — "Tekrar Dene" butonu ikisini de tetikler) ──
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -130,9 +141,23 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         await tf.setBackend('webgl')
         await tf.ready()
 
-        const detector = await poseDetection.createDetector(
-          poseDetection.SupportedModels.MoveNet,
-          { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING },
+        // Varsayılan model URL'i (tfhub.dev) artık Kaggle'a, oradan da imzalı bir GCS
+        // URL'ine yönlendiriyor — bu son adım bazı ağlarda (gözlemlendi: Türkiye'den bir
+        // kullanıcıda, hem normal hem gizli modda) hiç hata vermeden süresiz askıda kalıyor.
+        // Kütüphanenin kendi belgelediği modelUrl override'ını ("TF Hub'a erişimi olmayan
+        // bölgeler için") kullanıp doğrudan/sabit, redirect zinciri olmayan eski GCS mirror'a
+        // yönlendiriyoruz. Ayrıca tüm yükleme sürecine bir zaman aşımı sarıyoruz ki askıda
+        // kalma durumunda kullanıcı süresiz spinner yerine hata + "Tekrar Dene" görsün.
+        const detector = await withTimeout(
+          poseDetection.createDetector(
+            poseDetection.SupportedModels.MoveNet,
+            {
+              modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+              modelUrl: 'https://storage.googleapis.com/tfjs-models/savedmodel/movenet/singlepose/lightning/4/model.json',
+            },
+          ),
+          25000,
+          'Model yükleme 25 saniyeden uzun sürdü — internet bağlantınızı kontrol edip tekrar deneyin.',
         )
         if (cancelled) { detector.dispose(); return }
         detectorRef.current = detector
@@ -148,7 +173,8 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       detectorRef.current?.dispose()
       detectorRef.current = null
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryKey])
 
   // ── Kaynak bağlama — model hazır olunca ve mod/dosya değiştikçe ──────────
   useEffect(() => {
