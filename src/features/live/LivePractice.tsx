@@ -24,9 +24,15 @@
 //    su şişesi) kilitlenip kişiyi kaybederse, birkaç saniye hareketsizlik sonrası otomatik
 //    olarak detector.reset() ile tam-kare yeniden aramaya zorlanır.
 //
-// ML tabanlı canlı doğru/yanlış sınıflandırması henüz kapsam dışı (nedensel bir model veya
-// mevcut ST-GCN'in tarayıcıya taşınmasını gerektirir — bkz. rapor Bölüm 3-4). Yukarıdaki
-// "Geri Bildirim" sekmesi bunun YERİNE değil, o zamana kadarki basit bir ara katman.
+//  - (Deneysel) ML tabanlı canlı yürüyüş sınıflandırması (bkz. lib/gaitClassifier.ts, real-time
+//    roadmap madde C) — GAVD-only ST-GCN checkpoint'inin ONNX'e taşınmış hali, onnxruntime-web
+//    ile tarayıcıda WASM backend'inde çalışıyor. Model dosyası (public/models/gavd_gait_v1.onnx)
+//    repo'da yoksa yükleme sessizce başarısız olur ve rozet HİÇ görünmez — MoveNet/açı/metrik/
+//    Geri Bildirim özellikleri bundan bağımsız, her zaman çalışır. Bu, "Geri Bildirim" sekmesinin
+//    (kural-tabanlı) YERİNE değil, ona ek deneysel bir sinyal — REHAB24-6 tabanlı egzersiz-
+//    doğruluğu sınıflandırmasıyla KARIŞTIRILMAMALI, bu tamamen ayrı bir GAVD yürüyüş-anormalliği
+//    modeli (bkz. scripts/gavd/run_stgcn_train_gavd.sh yorumu — iki veri seti kasıtlı olarak
+//    birleştirilmedi).
 //
 // İki kaynak modu var:
 //  - 'camera': webcam, canlı — orijinal kullanım senaryosu.
@@ -50,6 +56,7 @@ import { buildLiveFeedback, romSpan, MIN_STEPS_FOR_FEEDBACK } from '../../lib/li
 import { GaitFeedback, type FeedbackItem } from '../../components/analysis/GaitFeedback'
 import { computeStepTimingStats, type StepTimingStats } from '../../lib/stepTiming'
 import { checkFraming } from '../../lib/framingCheck'
+import { LiveGaitClassifier, type GaitClassification } from '../../lib/gaitClassifier'
 
 interface LivePracticeProps {
   onClose: () => void
@@ -74,6 +81,12 @@ const GRAPH_WINDOW_SEC = 12
 // kaybettirmez.
 const FREEZE_TIME_SEC = 2.5
 const FREEZE_PIXEL_THRESHOLD = 10 // video-native piksel
+
+// GAVD-only ST-GCN checkpoint'inin ONNX export'u (bkz. scripts/gavd/export_stgcn_onnx.py) —
+// public/models/'a elle yerleştirilmesi gerekiyor (TRUBA'dan indirip kopyalanır). Dosya yoksa
+// (404) model yükleme sessizce başarısız olur ve bu özellik UI'da hiç görünmez — MoveNet/açı/
+// metrik özellikleri bundan etkilenmez, tamamen opsiyonel bir katman.
+const GAIT_MODEL_URL = '/models/gavd_gait_v1.onnx'
 
 // Bazı ağlarda (bkz. model yükleme effect'i) harici bir fetch hiç hata vermeden süresiz askıda
 // kalabiliyor — bu yardımcı, promise'i bir süre sonra reddedip kullanıcının "Tekrar Dene"
@@ -115,6 +128,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const stepCountRef = useRef(0)
   const stepTimingRef = useRef<StepTimingStats>({ stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null })
   const lastFeedbackUpdateRef = useRef(0)
+  // Deneysel canlı ST-GCN sınıflandırıcı (bkz. lib/gaitClassifier.ts) — MoveNet modelinden
+  // BAĞIMSIZ, kendi model dosyasını kendi yükler; yoksa `ready` hep false kalır ve tüm push/
+  // maybeClassify çağrıları no-op'a yakın davranır (sadece küçük bir bellek buffer'ı doldurur).
+  const gaitClassifierRef = useRef(new LiveGaitClassifier())
 
   const [mode, setMode] = useState<Mode>('camera')
   const [videoFile, setVideoFile] = useState<File | null>(null)
@@ -125,6 +142,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const [tab, setTab] = useState<PanelTab>('angles')
   const [graphData, setGraphData] = useState<LiveGraphPoint[]>([])
   const [liveFeedback, setLiveFeedback] = useState<FeedbackItem[]>([])
+  // null = henüz sınıflandırma yok (model yüklenmedi / henüz yeterli kare birikmedi) — rozet bu
+  // durumda hiç render edilmiyor, kullanıcı .onnx dosyası eklenene kadar özelliğin varlığını
+  // fark etmez bile.
+  const [gaitClassification, setGaitClassification] = useState<GaitClassification | null>(null)
   // Kamera izni reddedilince/hata olunca "Tekrar Dene" butonu bunu artırıp aşağıdaki kaynak
   // bağlama effect'ini (mode/videoFile değişmese bile) yeniden tetikler.
   const [retryKey, setRetryKey] = useState(0)
@@ -144,8 +165,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     stepCountRef.current = 0
     stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
     freezeCheckRef.current = { lastPos: null, stableSinceT: null }
+    gaitClassifierRef.current.reset()
     setGraphData([])
     setLiveFeedback([])
+    setGaitClassification(null)
   }, [])
 
   // ── Model yükleme — mount'ta, retryKey her artışta da (bkz. kaynak-bağlama
@@ -196,6 +219,18 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey])
+
+  // ── Deneysel ST-GCN yürüyüş sınıflandırıcısı — MoveNet'ten TAMAMEN bağımsız, sessiz
+  //    başarısızlık. public/models/gavd_gait_v1.onnx henüz repo'da yoksa (ki export TRUBA'da
+  //    henüz çalıştırılmadıysa böyledir) bu fetch 404 verir, konsola bir uyarı yazılır ve
+  //    `gaitClassifierRef.current.ready` hep false kalır — geri kalan her şey (MoveNet, açılar,
+  //    metrikler, Geri Bildirim) bundan tamamen etkilenmez. Kamera/model izin akışıyla
+  //    karışmaması için ayrı, mount'ta bir kere çalışan bir effect.
+  useEffect(() => {
+    gaitClassifierRef.current.load(GAIT_MODEL_URL).catch(e => {
+      console.warn('Deneysel yürüyüş sınıflandırma modeli yüklenemedi (opsiyonel özellik, göz ardı edilebilir):', e)
+    })
+  }, [])
 
   // ── Kaynak bağlama — model hazır olunca ve mod/dosya değiştikçe ──────────
   useEffect(() => {
@@ -275,6 +310,14 @@ export function LivePractice({ onClose }: LivePracticeProps) {
 
       const poses = await detector.estimatePoses(video, { flipHorizontal: false })
       draw(video, canvas, poses[0]?.keypoints as (Point2D & { name?: string })[] | undefined)
+
+      // Deneysel ST-GCN sınıflandırması — model yüklenmediyse (bkz. yukarıdaki effect) `ready`
+      // false'tur ve bu no-op'tur. Kendi iç WINDOW_STRIDE throttle'ı var (bkz. gaitClassifier.ts
+      // maybeClassify), o yüzden burada ekstra bir hız sınırlama gerekmiyor.
+      if (gaitClassifierRef.current.ready) {
+        const classification = await gaitClassifierRef.current.maybeClassify()
+        if (classification) setGaitClassification(classification)
+      }
 
       frameCount++
       const now = performance.now()
@@ -388,6 +431,12 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         }
 
         const angles = computeLiveAngles(byName)
+
+        // Deneysel ST-GCN sınıflandırıcı buffer'ına ekleniyor — model henüz yüklenmediyse bu
+        // sadece küçük bir bellek buffer'ı biriktirir, hiçbir hesaplama tetiklemez (bkz.
+        // gaitClassifier.ts push/maybeClassify ayrımı).
+        gaitClassifierRef.current.push(byName, angles)
+
         for (const key of Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]) {
           const val = angles[key]
           const el = anglesElRef.current[key]
@@ -615,6 +664,18 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               <span className="text-slate-400">adım</span>
             </div>
           )}
+          {state === 'running' && gaitClassification && (
+            // Deneysel ST-GCN rozeti — SADECE gerçek bir sınıflandırma sonucu üretildiğinde
+            // (yani public/models/gavd_gait_v1.onnx başarıyla yüklenip en az bir tam pencere
+            // biriktiğinde) görünür; model dosyası yoksa bu blok hiç render edilmez.
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-slate-900/70 text-slate-300">
+              <span className={gaitClassification.label === 'normal' ? 'text-emerald-400' : 'text-amber-400'}>●</span>
+              <span className="font-semibold text-white">
+                {gaitClassification.label === 'normal' ? 'Yürüyüş: Normal' : 'Yürüyüş: Anormal'}
+              </span>
+              <span className="text-slate-500">%{(gaitClassification.confidence * 100).toFixed(0)}</span>
+            </div>
+          )}
           {state === 'running' && (
             // Konumlanma/kadraj uyarısı (bkz. lib/framingCheck.ts) — bloklamayan, sadece bilgilendirme.
             // Varsayılan 'hidden', draw() sorun tespit ettiğinde kaldırıp metni dolduruyor.
@@ -764,8 +825,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
                   gaitTrackerRef.current.reset()
                   stepCountRef.current = 0
                   stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
+                  gaitClassifierRef.current.reset()
                   setGraphData([])
                   setLiveFeedback([])
+                  setGaitClassification(null)
                   if (repCountElRef.current) repCountElRef.current.textContent = '0'
                   if (gaitElRefs.current.cadence) gaitElRefs.current.cadence.textContent = '—'
                   if (gaitElRefs.current.stepLength) gaitElRefs.current.stepLength.textContent = '—'
@@ -788,7 +851,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               <GaitFeedback feedback={liveFeedback} variant="dark" />
               <p className="text-[10px] text-slate-600 leading-relaxed">
                 Basit eşik kurallarına dayanır (ML sınıflandırması değildir) — en az {MIN_STEPS_FOR_FEEDBACK} adım
-                biriktikten sonra görünür. Gerçek doğru/yanlış icra sınıflandırması bu ilk sürümde henüz yok.
+                biriktikten sonra görünür. Video üzerindeki "Yürüyüş: Normal/Anormal" rozeti
+                (görünüyorsa) ayrı, deneysel bir ST-GCN modelinden gelir — bu ikisi birbirinin
+                yerine geçmez, farklı yöntemlerdir.
               </p>
             </div>
 
@@ -799,7 +864,9 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               (veya son sıfırlamadan) itibaren canlı hesaplanıyor. Kadans/adım uzunluğu/hız
               YAKLAŞIK değerlerdir (derinlik yok, gövde uzunluğu ≈0.5m varsayımı, kameranın
               yandan çektiği varsayılıyor) — kesin ölçüm için mevcut video yükleme akışını
-              kullanın. Doğru/yanlış icra sınıflandırması bu ilk sürümde henüz yok.
+              kullanın. Video üzerinde görünebilecek "Yürüyüş: Normal/Anormal" rozeti deneysel bir
+              ST-GCN modelinden gelir (GAVD veri setiyle eğitildi, REHAB24-6 tabanlı egzersiz
+              doğruluğu sınıflandırmasıyla karıştırılmamalı) ve klinik bir teşhis yerine geçmez.
             </p>
           </div>
         </div>
