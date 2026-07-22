@@ -16,17 +16,40 @@
 //
 // Pencere/stride offline ile AYNI (bkz. scripts/stgcn/data_utils.py WINDOW_FRAMES/WINDOW_STRIDE)
 // — eğitim/üretim dağılımı simetrik kalsın diye.
-
-import * as ort from 'onnxruntime-web'
+//
+// ÖNEMLİ: paket kökünden ('onnxruntime-web') değil '/wasm' alt-yolundan import ediyoruz. Kök
+// paket varsayılan olarak ort.bundle.min.mjs'ye çözümleniyor — bu, WebGPU/WebNN dahil TÜM
+// execution provider'ları içeren "hepsi bir arada" bundle ve WASM ikilisini her zaman JSEP
+// (WebGPU-uyumlu) varyantından (~27MB, ort-wasm-simd-threaded.jsep.*) istiyor, biz sadece o
+// dosyayı public/ort/'a KOYMADIĞIMIZ için 404 ile sessizce (yakalanmış hata olarak) başarısız
+// oluyordu. '/wasm' alt-yolu (ort.wasm.bundle.min.mjs) sadece CPU/WASM execution provider'ını
+// içeriyor ve DAİMA sade 'ort-wasm-simd-threaded.wasm' dosyasını istiyor — public/ort/'a
+// kopyaladığımız dosyayla birebir eşleşiyor.
+//
+// Ayrıca burada TİP-SADECE (type-only) import kullanıp gerçek modülü sadece load() çağrıldığında
+// dinamik olarak indiriyoruz — LivePractice.tsx'teki tfjs/pose-detection dinamik import
+// konvansiyonuyla AYNI sebep: MoveNet'in kendi model yükleme zaman aşımı/performansı bu
+// (opsiyonel, deneysel) modülün bundle boyutundan hiçbir şekilde etkilenmesin.
+import type * as OrtNS from 'onnxruntime-web/wasm'
 import { MOVENET_KEYPOINT_NAMES, type Point2D, type LiveAngles } from './poseAngles'
 
-// onnxruntime-web'in WASM ikili dosyaları public/ort/'ta statik olarak sunuluyor (bkz. o klasör
-// — node_modules/onnxruntime-web/dist'ten kopyalandı, sadece 'threaded' SIMD varyantı, ~13MB).
-// numThreads=1: Netlify gibi statik hosting'lerde çoklu-thread WASM için gereken
-// Cross-Origin-Opener/Embedder-Policy header'ları yok — SharedArrayBuffer gerektirmeyen
-// tek-thread moduna sabitleniyor (model küçük olduğu için performans sorun değil).
-ort.env.wasm.wasmPaths = '/ort/'
-ort.env.wasm.numThreads = 1
+let ortModulePromise: Promise<typeof OrtNS> | null = null
+function loadOrtModule(): Promise<typeof OrtNS> {
+  if (!ortModulePromise) {
+    ortModulePromise = import('onnxruntime-web/wasm').then(ort => {
+      // onnxruntime-web'in WASM ikili dosyaları public/ort/'ta statik olarak sunuluyor (bkz. o
+      // klasör — node_modules/onnxruntime-web/dist'ten kopyalandı, sadece 'threaded' SIMD
+      // varyantı, ~13MB). numThreads=1: Netlify gibi statik hosting'lerde çoklu-thread WASM için
+      // gereken Cross-Origin-Opener/Embedder-Policy header'ları yok — SharedArrayBuffer
+      // gerektirmeyen tek-thread moduna sabitleniyor (model küçük olduğu için performans sorun
+      // değil).
+      ort.env.wasm.wasmPaths = '/ort/'
+      ort.env.wasm.numThreads = 1
+      return ort
+    })
+  }
+  return ortModulePromise
+}
 
 export const WINDOW_FRAMES = 110
 export const WINDOW_STRIDE = 55
@@ -59,7 +82,8 @@ function median(sortedAsc: number[]): number {
 }
 
 export class LiveGaitClassifier {
-  private session: ort.InferenceSession | null = null
+  private ort: typeof OrtNS | null = null
+  private session: OrtNS.InferenceSession | null = null
   private loadPromise: Promise<void> | null = null
   private buffer: BufferedFrame[] = []
   private framesSinceLastInfer = 0
@@ -71,8 +95,10 @@ export class LiveGaitClassifier {
   async load(modelUrl: string): Promise<void> {
     if (this.session) return
     if (!this.loadPromise) {
-      this.loadPromise = ort.InferenceSession.create(modelUrl, { executionProviders: ['wasm'] }).then(s => {
-        this.session = s
+      this.loadPromise = loadOrtModule().then(async ort => {
+        const session = await ort.InferenceSession.create(modelUrl, { executionProviders: ['wasm'] })
+        this.ort = ort
+        this.session = session
       })
     }
     return this.loadPromise
@@ -87,13 +113,13 @@ export class LiveGaitClassifier {
 
   /** Pencere dolu VE WINDOW_STRIDE kare biriktiyse yeni bir tahmin döner, aksi halde null. */
   async maybeClassify(): Promise<GaitClassification | null> {
-    if (!this.session) return null
+    if (!this.session || !this.ort) return null
     if (this.buffer.length < WINDOW_FRAMES) return null
     if (this.framesSinceLastInfer < WINDOW_STRIDE) return null
     this.framesSinceLastInfer = 0
 
     const x = this.buildInputTensor()
-    const lengths = new ort.Tensor('int64', BigInt64Array.from([BigInt(WINDOW_FRAMES)]), [1])
+    const lengths = new this.ort.Tensor('int64', BigInt64Array.from([BigInt(WINDOW_FRAMES)]), [1])
 
     const results = await this.session.run({ x, lengths })
     const logit = Number(results.logit.data[0])
@@ -103,7 +129,7 @@ export class LiveGaitClassifier {
     return { label, probNormal, confidence }
   }
 
-  private buildInputTensor(): ort.Tensor {
+  private buildInputTensor(): OrtNS.Tensor {
     const T = WINDOW_FRAMES
     const data = new Float32Array(T * V * C)
 
@@ -163,7 +189,7 @@ export class LiveGaitClassifier {
       setAngle(R_HIP, a['R Hip'])
     }
 
-    return new ort.Tensor('float32', data, [1, T, V, C])
+    return new this.ort!.Tensor('float32', data, [1, T, V, C])
   }
 
   reset(): void {
