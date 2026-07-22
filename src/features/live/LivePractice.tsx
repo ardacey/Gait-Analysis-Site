@@ -220,17 +220,24 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey])
 
-  // ── Deneysel ST-GCN yürüyüş sınıflandırıcısı — MoveNet'ten TAMAMEN bağımsız, sessiz
+  // ── Deneysel ST-GCN yürüyüş sınıflandırıcısı — MoveNet'ten mantıksal olarak bağımsız, sessiz
   //    başarısızlık. public/models/gavd_gait_v1.onnx henüz repo'da yoksa (ki export TRUBA'da
   //    henüz çalıştırılmadıysa böyledir) bu fetch 404 verir, konsola bir uyarı yazılır ve
-  //    `gaitClassifierRef.current.ready` hep false kalır — geri kalan her şey (MoveNet, açılar,
-  //    metrikler, Geri Bildirim) bundan tamamen etkilenmez. Kamera/model izin akışıyla
-  //    karışmaması için ayrı, mount'ta bir kere çalışan bir effect.
+  //    `gaitClassifierRef.current.ready` hep false kalır — geri kalan her şey (açılar, metrikler,
+  //    Geri Bildirim) bundan tamamen etkilenmez.
+  //    BİLE BİLE `modelReady`ye bağlı: MoveNet'in kendi yüklemesi (yukarıdaki effect) zaten
+  //    kırılgan bir harici zincire (tfhub->Kaggle->imzalı GCS URL) bağlı ve zaman zaman ağır
+  //    ağlarda askıda kalabiliyor (bkz. FREEZE/withTimeout yorumları). Bu sınıflandırıcının
+  //    kendi indirmesi (~13.5MB WASM + ~1.2MB model) MoveNet ile AYNI ANDA (mount'ta paralel)
+  //    başlarsa, aynı bant genişliğini paylaşarak MoveNet'in zaten sınırda olan 25sn'lik zaman
+  //    aşımını gereksiz yere zorlayabilir — gözlemlendi. Bu yüzden MoveNet başarıyla yüklenip
+  //    `modelReady` true olana kadar bu indirme hiç başlamıyor.
   useEffect(() => {
+    if (!modelReady) return
     gaitClassifierRef.current.load(GAIT_MODEL_URL).catch(e => {
       console.warn('Deneysel yürüyüş sınıflandırma modeli yüklenemedi (opsiyonel özellik, göz ardı edilebilir):', e)
     })
-  }, [])
+  }, [modelReady])
 
   // ── Kaynak bağlama — model hazır olunca ve mod/dosya değiştikçe ──────────
   useEffect(() => {
