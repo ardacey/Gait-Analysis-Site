@@ -66,7 +66,14 @@ const L_KNEE = 13, R_KNEE = 14
 interface BufferedFrame {
   byName: Record<string, Point2D | undefined>
   angles: LiveAngles
+  t: number
 }
+
+// GEÇİCİ TEŞHİS ANAHTARI: canlıda yüksek-güvenle sistematik yanlış sınıflandırma (bkz.
+// konuşma — letterbox/pad düzeltmesinden SONRA bile devam etti) araştırılırken, modele
+// gerçekte ne beslendiğini (ölçek, pencere süresi, açı kanalı) doğrudan gözlemlemek için.
+// Kök neden bulunup doğrulandıktan sonra false yapılıp/kaldırılabilir.
+const DEBUG_LOG = true
 
 export interface GaitClassification {
   label: 'normal' | 'abnormal'
@@ -105,8 +112,8 @@ export class LiveGaitClassifier {
   }
 
   /** Her karede çağrılır — kayan pencere buffer'ına (en fazla WINDOW_FRAMES) ekler. */
-  push(byName: Record<string, Point2D | undefined>, angles: LiveAngles): void {
-    this.buffer.push({ byName, angles })
+  push(byName: Record<string, Point2D | undefined>, angles: LiveAngles, tSec: number = performance.now() / 1000): void {
+    this.buffer.push({ byName, angles, t: tSec })
     if (this.buffer.length > WINDOW_FRAMES) this.buffer.shift()
     this.framesSinceLastInfer++
   }
@@ -126,6 +133,33 @@ export class LiveGaitClassifier {
     const probNormal = 1 / (1 + Math.exp(-logit))
     const label: 'normal' | 'abnormal' = probNormal >= 0.5 ? 'normal' : 'abnormal'
     const confidence = label === 'normal' ? probNormal : 1 - probNormal
+
+    if (DEBUG_LOG) {
+      const windowDurationSec = this.buffer[this.buffer.length - 1].t - this.buffer[0].t
+      const angleNonZeroFrac = this.buffer.filter(f =>
+        !Number.isNaN(f.angles['L Knee']) || !Number.isNaN(f.angles['R Knee']) ||
+        !Number.isNaN(f.angles['L Hip']) || !Number.isNaN(f.angles['R Hip']),
+      ).length / this.buffer.length
+      const xData = x.data as Float32Array
+      let xMin = Infinity, xMax = -Infinity, xSum = 0, xAbsSum = 0
+      for (let i = 0; i < xData.length; i += C) {
+        const v = xData[i]
+        if (v < xMin) xMin = v
+        if (v > xMax) xMax = v
+        xSum += v
+        xAbsSum += Math.abs(v)
+      }
+      const nNodes = xData.length / C
+      console.log('[gaitClassifier DEBUG]', {
+        windowDurationSec: windowDurationSec.toFixed(2),
+        impliedFps: (WINDOW_FRAMES / windowDurationSec).toFixed(1),
+        angleChannelPresentFrac: angleNonZeroFrac.toFixed(2),
+        xChannelMin: xMin.toFixed(3), xChannelMax: xMax.toFixed(3),
+        xChannelMeanAbs: (xAbsSum / nNodes).toFixed(3),
+        logit: logit.toFixed(4), probNormal: probNormal.toFixed(4), label,
+      })
+    }
+
     return { label, probNormal, confidence }
   }
 
