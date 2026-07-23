@@ -54,6 +54,20 @@ function loadOrtModule(): Promise<typeof OrtNS> {
 export const WINDOW_FRAMES = 110
 export const WINDOW_STRIDE = 55
 
+// GAVD/REHAB24-6 kaynak videoları ~30fps varsayımıyla işlendi (bkz. scripts/stgcn/data_utils.py
+// yorumu) — WINDOW_FRAMES=110 orada ~3.7sn'lik (birkaç adım döngüsü) bir pencereye karşılık
+// geliyordu. Canlıda push() her requestAnimationFrame karesinde çağrılıyor (~45-55fps ölçüldü,
+// bkz. konuşma — DEBUG_LOG çıktısı), yani AYNI 110 kare canlıda sadece ~2sn'ye sıkışıyor: model
+// öğrendiğinden çok daha "hızlandırılmış" bir hareket görüyor. Bu, gözlemlenen sistematik yanlış
+// sınıflandırmanın (yüksek güvenle hep "anormal") olası kök nedeni. Burada push() akışını
+// ~30fps'e THROTTLE ediyoruz (diğer canlı özellikler — açı paneli, metrikler, adım sayacı — bu
+// sınıflandırıcıdan bağımsız, hâlâ her karede çalışmaya devam ediyor, SADECE bu deneysel
+// modülün kendi buffer'ı yavaşlatılıyor). GAVD'nin gerçek per-video fps'i bilinmiyor (YouTube
+// kaynaklı, değişken olabilir) — 30fps, projedeki mevcut REHAB24-6 varsayımıyla tutarlı bir
+// ilk yaklaşım, kesin garanti değil.
+const TARGET_FPS = 30
+const MIN_FRAME_INTERVAL_SEC = 1 / TARGET_FPS
+
 const V = 18 // 17 COCO eklemi + sentetik 'Hip'
 const C = 4  // x_norm, y_norm, skor, açı
 const HIP_IDX = 17
@@ -111,8 +125,12 @@ export class LiveGaitClassifier {
     return this.loadPromise
   }
 
-  /** Her karede çağrılır — kayan pencere buffer'ına (en fazla WINDOW_FRAMES) ekler. */
+  /** Her karede çağrılır — kayan pencere buffer'ına (en fazla WINDOW_FRAMES) ekler.
+   * TARGET_FPS'e throttle edilir (bkz. yukarıdaki yorum) — RAF'ın gerçek karesi değil, eğitim
+   * verisinin varsayılan fps'ine yakın bir örnekleme oranı burada önemli olan. */
   push(byName: Record<string, Point2D | undefined>, angles: LiveAngles, tSec: number = performance.now() / 1000): void {
+    const last = this.buffer[this.buffer.length - 1]
+    if (last && tSec - last.t < MIN_FRAME_INTERVAL_SEC) return
     this.buffer.push({ byName, angles, t: tSec })
     if (this.buffer.length > WINDOW_FRAMES) this.buffer.shift()
     this.framesSinceLastInfer++
