@@ -87,7 +87,7 @@ interface BufferedFrame {
 // konuşma — letterbox/pad düzeltmesinden SONRA bile devam etti) araştırılırken, modele
 // gerçekte ne beslendiğini (ölçek, pencere süresi, açı kanalı) doğrudan gözlemlemek için.
 // Kök neden bulunup doğrulandıktan sonra false yapılıp/kaldırılabilir.
-const DEBUG_LOG = true
+const DEBUG_LOG = false
 
 export interface GaitClassification {
   label: 'normal' | 'abnormal'
