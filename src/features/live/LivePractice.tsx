@@ -135,6 +135,15 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const stepCountRef = useRef(0)
   const stepTimingRef = useRef<StepTimingStats>({ stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null })
   const lastFeedbackUpdateRef = useRef(0)
+  // Video dosya modunda `video.loop = true` (bkz. aşağıdaki effect) — döngü, kişinin ekran
+  // pozisyonunun kare atlamadan "ışınlanmasına" (son kareden ilk kareye) yol açıyor. gaitClassifier
+  // buffer'ı bunu bilmiyorsa (bkz. konuşma — DEBUG_LOG'da gözlemlenen aşırı xChannelMin/Max
+  // sıçramaları, döngü sınırını kapsayan pencerelerde) bu süreksizliği yeniden örneklerken
+  // "gerçek" bir hareket gibi yorumlayıp modele gürültü besliyor. lastVideoTimeRef ile
+  // video.currentTime'ın GERİYE sıçradığı anı (döngü başı) tespit edip sınıflandırıcı buffer'ını
+  // sıfırlıyoruz — diğer takip/metrik state'leri (ROM, ortalama vb.) kasıtlı olarak ETKİLENMİYOR,
+  // sadece bu deneysel modülün kendi buffer'ı.
+  const lastVideoTimeRef = useRef(0)
   // Deneysel canlı ST-GCN sınıflandırıcı (bkz. lib/gaitClassifier.ts) — MoveNet modelinden
   // BAĞIMSIZ, kendi model dosyasını kendi yükler; yoksa `ready` hep false kalır ve tüm push/
   // maybeClassify çağrıları no-op'a yakın davranır (sadece küçük bir bellek buffer'ı doldurur).
@@ -322,6 +331,16 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         rafRef.current = requestAnimationFrame(loop)
         return
       }
+
+      // Video dosya modunda loop=true ile currentTime GERİYE sıçrar (döngü başı) — bkz. yukarıdaki
+      // lastVideoTimeRef yorumu. 0.5sn'den büyük bir geri sıçrama döngü olarak kabul ediliyor
+      // (normal oynatımda currentTime hep artar, küçük geri kaymalar (seek/buffering) olası ama
+      // 0.5sn eşiği bunları büyük ölçüde eler). Webcam modunda currentTime kavramı anlamsız/hep
+      // artan olduğu için bu kontrol orada hiç tetiklenmez, zararsız.
+      if (video.currentTime < lastVideoTimeRef.current - 0.5) {
+        gaitClassifierRef.current.reset()
+      }
+      lastVideoTimeRef.current = video.currentTime
 
       const poses = await detector.estimatePoses(video, { flipHorizontal: false })
       draw(video, canvas, poses[0]?.keypoints as (Point2D & { name?: string })[] | undefined)
