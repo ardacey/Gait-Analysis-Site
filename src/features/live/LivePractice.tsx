@@ -86,7 +86,14 @@ const FREEZE_PIXEL_THRESHOLD = 10 // video-native piksel
 // public/models/'a elle yerleştirilmesi gerekiyor (TRUBA'dan indirip kopyalanır). Dosya yoksa
 // (404) model yükleme sessizce başarısız olur ve bu özellik UI'da hiç görünmez — MoveNet/açı/
 // metrik özellikleri bundan etkilenmez, tamamen opsiyonel bir katman.
-const GAIT_MODEL_URL = '/models/gavd_gait_v1.onnx'
+//
+// ÖNEMLİ (bkz. konuşma — model defalarca yeniden eğitilip AYNI dosya adıyla üzerine yazıldı,
+// ama canlı davranış HİÇ değişmedi): URL'de cache-busting parametresi YOKTU — tarayıcı ve/veya
+// Netlify CDN'i muhtemelen İLK deploy'daki modeli önbellekten sunmaya devam ediyordu. Her yeni
+// checkpoint deploy edildiğinde bu sürüm etiketini DE güncelleyin (checkpoint klasör adıyla
+// eşleştirmek pratik: şu an gavd_gait_extra_normal_v1).
+const GAIT_MODEL_VERSION = 'extra-normal-v1'
+const GAIT_MODEL_URL = `/models/gavd_gait_v1.onnx?v=${GAIT_MODEL_VERSION}`
 
 // Bazı ağlarda (bkz. model yükleme effect'i) harici bir fetch hiç hata vermeden süresiz askıda
 // kalabiliyor — bu yardımcı, promise'i bir süre sonra reddedip kullanıcının "Tekrar Dene"
