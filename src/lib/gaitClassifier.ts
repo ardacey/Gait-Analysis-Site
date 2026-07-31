@@ -235,6 +235,35 @@ export class LiveGaitClassifier {
     return { byName, angles, t }
   }
 
+  /** dataset.py _smooth_keypoints() ile BİREBİR AYNI mantık (bkz. o fonksiyonun docstring'i —
+   * neden hem burada hem orada gerekli): 3 kareli hareketli MEDYAN, sadece score>0 komşular
+   * arasında; eksik (score<=0) kareler DEĞİŞTİRİLMİYOR, en az 2 geçerli komşu yoksa kare de
+   * değiştirilmiyor. Girdi/çıktı: yeniden örneklenmiş T'lik BufferedFrame dizisi. */
+  private smoothResampled(frames: BufferedFrame[]): BufferedFrame[] {
+    const T = frames.length
+    const out: BufferedFrame[] = frames.map(f => ({ byName: { ...f.byName }, angles: f.angles, t: f.t }))
+    for (const name of MOVENET_KEYPOINT_NAMES) {
+      for (let t = 0; t < T; t++) {
+        const p = frames[t].byName[name]
+        if (!p || (p.score ?? 0) <= 0) continue
+        const lo = Math.max(0, t - 1), hi = Math.min(T, t + 2)
+        const xs: number[] = [], ys: number[] = []
+        for (let tt = lo; tt < hi; tt++) {
+          const pp = frames[tt].byName[name]
+          if (pp && (pp.score ?? 0) > 0) { xs.push(pp.x); ys.push(pp.y) }
+        }
+        if (xs.length >= 2) {
+          xs.sort((a, b) => a - b); ys.sort((a, b) => a - b)
+          const mid = Math.floor(xs.length / 2)
+          const medX = xs.length % 2 === 0 ? (xs[mid - 1] + xs[mid]) / 2 : xs[mid]
+          const medY = ys.length % 2 === 0 ? (ys[mid - 1] + ys[mid]) / 2 : ys[mid]
+          out[t].byName[name] = { x: medX, y: medY, score: p.score }
+        }
+      }
+    }
+    return out
+  }
+
   private buildInputTensor(tEnd: number): OrtNS.Tensor {
     const T = WINDOW_FRAMES
     const data = new Float32Array(T * V * C)
@@ -243,11 +272,15 @@ export class LiveGaitClassifier {
     // Pencereyi GERÇEK ZAMANA göre T eşit noktaya yeniden örnekle (bkz. yukarıdaki yorum) —
     // tarayıcının gerçek yakalama hızından bağımsız olarak modele her zaman eğitimdeki gibi
     // ~WINDOW_DURATION_SEC'lik, T=WINDOW_FRAMES noktalı bir pencere gitsin diye.
-    const resampled: BufferedFrame[] = []
+    let resampled: BufferedFrame[] = []
     for (let i = 0; i < T; i++) {
       const t = tStart + (i * WINDOW_DURATION_SEC) / (T - 1)
       resampled.push(this.interpolateAt(t))
     }
+    // Tek-kare poz tespiti sıçramalarını (bkz. konuşma — analyze_gait_speed.py'de gözlemlenen
+    // ~180° diz ROM sıçraması) yumuşat — dataset.py _smooth_keypoints() ile SİMETRİK, aksi
+    // halde train/inference dağılım kayması yaratırdık.
+    resampled = this.smoothResampled(resampled)
 
     // Gövde ölçeği: PENCERE İÇİ (yeniden örneklenmiş) medyan omuz-orta<->kalça-orta mesafesi —
     // dataset.py normalize_sequence() ile AYNI (her pencere kendi ölçeğini bağımsız hesaplıyor).
