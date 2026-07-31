@@ -54,24 +54,27 @@ function loadOrtModule(): Promise<typeof OrtNS> {
 export const WINDOW_FRAMES = 110
 export const WINDOW_STRIDE = 55
 
-// GAVD/REHAB24-6 kaynak videoları ~30fps varsayımıyla işlendi (bkz. scripts/stgcn/data_utils.py
-// yorumu) — WINDOW_FRAMES=110 orada ~3.7sn'lik (birkaç adım döngüsü) bir pencereye karşılık
-// geliyordu.
+// SONRADAN DÜZELTME #2 (bkz. konuşma — classify_test_video_offline.py ile offline/canlı KESİN
+// karşılaştırması): "gerçek zamana göre WINDOW_DURATION_SEC=~3.667sn'e zorla yeniden örnekle"
+// fikri (bir önceki sürüm) YANLIŞ bir varsayıma dayanıyordu. movenet_pose_extractor.py (TÜM
+// eğitim verisi — GAVD/WeightGait/Toronto — bundan geçiyor) videoyu NATIVE FPS'te, HİÇBİR
+// resampling/normalize olmadan okuyor (bkz. o dosyadaki extract_video() — düz cap.read()
+// döngüsü); data_utils.py sliding_windows_from_full_video de WINDOW_FRAMES=110'u SAF KARE
+// SAYISI olarak kullanıyor (frame_idx ile indeksleme, gerçek zamanla hiç ilgisi yok).
+// ASSUMED_TRAIN_FPS=30 varsayımı sadece ÇOK ÖNCEKİ REHAB24-6-only döneminden (o veri seti
+// gerçekten 30fps'ti) kalma bir mirastı — GAVD/WeightGait/Toronto'nun karışık kaynaklı ham
+// videolarının native fps'i muhtemelen 30'dan farklı, bu yüzden pencereyi zorla 3.667 gerçek
+// saniyeye interpolasyonla sıkıştırmak/uzatmak modele SİSTEMATİK OLARAK YANLIŞ HIZDA bir
+// yürüyüş besliyordu. KANIT: classify_test_video_offline.py (native fps, resampling yok) AYNI
+// videoyu ve AYNI checkpoint'i kullanarak "normal" diyor (probNormal 0.56-0.76), canlı (zamana
+// göre zorla yeniden örnekleyen eski kod) ise ısrarla "anormal" diyordu.
 //
-// SONRADAN DÜZELTME (bkz. konuşma — DEBUG_LOG çıktısı): "push()'u 30fps'e throttle et" fikri
-// YETERSİZ çıktı — throttle sadece hızı YUKARI SINIRLAYABİLİYOR, tarayıcı/cihaz zaten 30fps'in
-// ALTINDA çalışıyorsa (ölçülen: ~22fps) hızlandıramıyor. Sonuç: 110 "kare" toplanana kadar
-// gerçekte ~4.9sn geçiyordu (beklenen ~3.67sn yerine) — modele eğitimdekinden ~%33 daha
-// "yavaşlatılmış/uzatılmış" bir hareket besleniyordu, bu da sistematik yanlış sınıflandırmayı
-// açıklıyor. KALICI ÇÖZÜM: pencereyi KARE SAYISINA değil GERÇEK ZAMANA göre tamponlayıp, bu
-// pencereyi her zaman tam WINDOW_FRAMES noktaya yeniden örnekliyoruz (lineer interpolasyon) —
-// böylece tarayıcının gerçek yakalama hızı ne olursa olsun (22, 30, 45fps...) modele her zaman
-// eğitimdeki gibi ~WINDOW_DURATION_SEC'lik bir pencere gidiyor.
-const ASSUMED_TRAIN_FPS = 30
-const WINDOW_DURATION_SEC = WINDOW_FRAMES / ASSUMED_TRAIN_FPS // ~3.667sn
-const STRIDE_DURATION_SEC = WINDOW_STRIDE / ASSUMED_TRAIN_FPS // ~1.833sn
-// Buffer'da bu süreden fazla veri tutmaya gerek yok (küçük bir marjla) — bellek sınırlı kalsın.
-const MAX_BUFFER_AGE_SEC = WINDOW_DURATION_SEC + 1.0
+// KALICI ÇÖZÜM: offline'la BİREBİR SİMETRİK ol — pencereyi KARE SAYISINA göre oluştur (son
+// WINDOW_FRAMES ham push edilmiş kare, interpolasyon/resampling YOK), gerçek süresi ne olursa
+// olsun (tıpkı offline'da farklı native-fps videoların da öyle işlenmesi gibi).
+// Bellek/duraklama güvenliği için buffer'ı yine de makul bir üst sınırla tutuyoruz (gerçek
+// pencere boyutuyla ilgisi yok, sadece video duraklatılırsa vs. sonsuz büyümesin diye).
+const MAX_BUFFER_FRAMES = WINDOW_FRAMES * 3
 
 const V = 18 // 17 COCO eklemi + sentetik 'Hip'
 const C = 4  // x_norm, y_norm, skor, açı
@@ -112,7 +115,8 @@ export class LiveGaitClassifier {
   private session: OrtNS.InferenceSession | null = null
   private loadPromise: Promise<void> | null = null
   private buffer: BufferedFrame[] = []
-  private lastInferAtT = -Infinity
+  private totalPushed = 0
+  private lastInferAtPushCount = 0
 
   get ready(): boolean {
     return this.session != null
@@ -130,29 +134,23 @@ export class LiveGaitClassifier {
     return this.loadPromise
   }
 
-  /** Her karede çağrılır — buffer'a ham (zaman damgalı) kareyi ekler. Artık burada bir hız
-   * sınırlaması YOK (bkz. yukarıdaki yorum — throttle yetersizdi); gerçek yakalama hızı ne
-   * olursa olsun, sınıflandırma anında (buildInputTensor) zaman-tabanlı yeniden örnekleme
-   * yapılıyor. Sadece bellek sınırlı kalsın diye MAX_BUFFER_AGE_SEC'ten eski kareler atılıyor. */
+  /** Her karede çağrılır — buffer'a ham (zaman damgalı) kareyi ekler. KARE SAYISINA göre
+   * sınırlanıyor (bkz. yukarıdaki yorum — offline'la simetrik olsun diye), zamana göre DEĞİL. */
   push(byName: Record<string, Point2D | undefined>, angles: LiveAngles, tSec: number = performance.now() / 1000): void {
     this.buffer.push({ byName, angles, t: tSec })
-    const cutoff = tSec - MAX_BUFFER_AGE_SEC
-    while (this.buffer.length > 0 && this.buffer[0].t < cutoff) this.buffer.shift()
+    this.totalPushed++
+    while (this.buffer.length > MAX_BUFFER_FRAMES) this.buffer.shift()
   }
 
-  /** Buffer en az WINDOW_DURATION_SEC'lik GERÇEK ZAMAN kapsıyorsa VE son tahminden bu yana
-   * en az STRIDE_DURATION_SEC geçtiyse yeni bir tahmin döner, aksi halde null. */
+  /** Buffer en az WINDOW_FRAMES ham kare biriktiyse VE son tahminden bu yana en az
+   * WINDOW_STRIDE yeni ham kare push edildiyse yeni bir tahmin döner, aksi halde null. */
   async maybeClassify(): Promise<GaitClassification | null> {
     if (!this.session || !this.ort) return null
-    if (this.buffer.length < 2) return null
+    if (this.buffer.length < WINDOW_FRAMES) return null
+    if (this.totalPushed - this.lastInferAtPushCount < WINDOW_STRIDE) return null
+    this.lastInferAtPushCount = this.totalPushed
 
-    const tEnd = this.buffer[this.buffer.length - 1].t
-    const tStart = this.buffer[0].t
-    if (tEnd - tStart < WINDOW_DURATION_SEC) return null
-    if (tEnd - this.lastInferAtT < STRIDE_DURATION_SEC) return null
-    this.lastInferAtT = tEnd
-
-    const x = this.buildInputTensor(tEnd)
+    const x = this.buildInputTensor()
     const lengths = new this.ort.Tensor('int64', BigInt64Array.from([BigInt(WINDOW_FRAMES)]), [1])
 
     const results = await this.session.run({ x, lengths })
@@ -178,10 +176,12 @@ export class LiveGaitClassifier {
         if (hasAngle) anglePresentCount++
       }
       const nNodes = WINDOW_FRAMES * V
+      const windowFrames = this.buffer.slice(-WINDOW_FRAMES)
+      const winSpanSec = windowFrames[windowFrames.length - 1].t - windowFrames[0].t
       console.log('[gaitClassifier DEBUG]', {
-        windowDurationSec: WINDOW_DURATION_SEC.toFixed(2),
-        rawBufferSpanSec: (tEnd - tStart).toFixed(2),
-        rawBufferImpliedFps: (this.buffer.length / (tEnd - tStart)).toFixed(1),
+        windowFrames: WINDOW_FRAMES,
+        windowSpanSec: winSpanSec.toFixed(2),
+        windowImpliedFps: (winSpanSec > 0 ? (WINDOW_FRAMES - 1) / winSpanSec : 0).toFixed(1),
         angleChannelPresentFrac: (anglePresentCount / WINDOW_FRAMES).toFixed(2),
         xChannelMin: xMin.toFixed(3), xChannelMax: xMax.toFixed(3),
         xChannelMeanAbs: (xAbsSum / nNodes).toFixed(3),
@@ -190,49 +190,6 @@ export class LiveGaitClassifier {
     }
 
     return { label, probNormal, confidence }
-  }
-
-  /** t zamanındaki değeri, buffer'daki en yakın iki ham kare arasında lineer interpolasyonla
-   * hesaplar (t, buffer aralığının dışındaysa en yakın uca kenetlenir — clamp). */
-  private interpolateAt(t: number): BufferedFrame {
-    const buf = this.buffer
-    if (t <= buf[0].t) return buf[0]
-    if (t >= buf[buf.length - 1].t) return buf[buf.length - 1]
-
-    // Buffer zaman sırasına göre artan olduğu için doğrusal tarama yeterli (T=110 hedef nokta x
-    // ~birkaç yüz ham kare — trivial maliyet, ihtiyaç halinde ikili aramaya çevrilebilir).
-    let lo = 0
-    while (lo + 1 < buf.length && buf[lo + 1].t < t) lo++
-    const a = buf[lo]
-    const b = buf[Math.min(lo + 1, buf.length - 1)]
-    const span = b.t - a.t
-    const alpha = span > 1e-6 ? (t - a.t) / span : 0
-
-    const lerp = (x: number, y: number) => x + (y - x) * alpha
-    const byName: Record<string, Point2D | undefined> = {}
-    for (const name of MOVENET_KEYPOINT_NAMES) {
-      const pa = a.byName[name]
-      const pb = b.byName[name]
-      if (!pa && !pb) { byName[name] = undefined; continue }
-      const ax = pa?.x ?? 0, ay = pa?.y ?? 0, asc = pa?.score ?? 0
-      const bx = pb?.x ?? 0, by = pb?.y ?? 0, bsc = pb?.score ?? 0
-      byName[name] = { x: lerp(ax, bx), y: lerp(ay, by), score: lerp(asc, bsc) }
-    }
-    const lerpAngle = (x: number, y: number) => {
-      if (Number.isNaN(x) && Number.isNaN(y)) return NaN
-      if (Number.isNaN(x)) return y
-      if (Number.isNaN(y)) return x
-      return lerp(x, y)
-    }
-    const angles = {
-      'L Knee': lerpAngle(a.angles['L Knee'], b.angles['L Knee']),
-      'R Knee': lerpAngle(a.angles['R Knee'], b.angles['R Knee']),
-      'L Hip': lerpAngle(a.angles['L Hip'], b.angles['L Hip']),
-      'R Hip': lerpAngle(a.angles['R Hip'], b.angles['R Hip']),
-      'L Elbow': lerpAngle(a.angles['L Elbow'], b.angles['L Elbow']),
-      'R Elbow': lerpAngle(a.angles['R Elbow'], b.angles['R Elbow']),
-    } as LiveAngles
-    return { byName, angles, t }
   }
 
   /** dataset.py _smooth_keypoints() ile BİREBİR AYNI mantık (bkz. o fonksiyonun docstring'i —
@@ -264,19 +221,14 @@ export class LiveGaitClassifier {
     return out
   }
 
-  private buildInputTensor(tEnd: number): OrtNS.Tensor {
+  private buildInputTensor(): OrtNS.Tensor {
     const T = WINDOW_FRAMES
     const data = new Float32Array(T * V * C)
-    const tStart = tEnd - WINDOW_DURATION_SEC
 
-    // Pencereyi GERÇEK ZAMANA göre T eşit noktaya yeniden örnekle (bkz. yukarıdaki yorum) —
-    // tarayıcının gerçek yakalama hızından bağımsız olarak modele her zaman eğitimdeki gibi
-    // ~WINDOW_DURATION_SEC'lik, T=WINDOW_FRAMES noktalı bir pencere gitsin diye.
-    let resampled: BufferedFrame[] = []
-    for (let i = 0; i < T; i++) {
-      const t = tStart + (i * WINDOW_DURATION_SEC) / (T - 1)
-      resampled.push(this.interpolateAt(t))
-    }
+    // Pencere = son T ham push edilmiş kare, AYNEN offline'daki gibi (data_utils.py
+    // extract_sequence — ardışık frame_idx, gerçek zamanla ilgisi yok). İnterpolasyon/yeniden
+    // örnekleme YOK (bkz. yukarıdaki yorum — eski sürüm bunu yapıyordu, yanlıştı).
+    let resampled: BufferedFrame[] = this.buffer.slice(-T)
     // Tek-kare poz tespiti sıçramalarını (bkz. konuşma — analyze_gait_speed.py'de gözlemlenen
     // ~180° diz ROM sıçraması) yumuşat — dataset.py _smooth_keypoints() ile SİMETRİK, aksi
     // halde train/inference dağılım kayması yaratırdık.
@@ -343,6 +295,7 @@ export class LiveGaitClassifier {
 
   reset(): void {
     this.buffer = []
-    this.lastInferAtT = -Infinity
+    this.totalPushed = 0
+    this.lastInferAtPushCount = 0
   }
 }
