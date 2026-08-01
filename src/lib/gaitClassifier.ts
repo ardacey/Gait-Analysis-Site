@@ -58,20 +58,26 @@ export const WINDOW_STRIDE = 55
 // karşılaştırması): "gerçek zamana göre WINDOW_DURATION_SEC=~3.667sn'e zorla yeniden örnekle"
 // fikri (bir önceki sürüm) YANLIŞ bir varsayıma dayanıyordu. movenet_pose_extractor.py (TÜM
 // eğitim verisi — GAVD/WeightGait/Toronto — bundan geçiyor) videoyu NATIVE FPS'te, HİÇBİR
-// resampling/normalize olmadan okuyor (bkz. o dosyadaki extract_video() — düz cap.read()
-// döngüsü); data_utils.py sliding_windows_from_full_video de WINDOW_FRAMES=110'u SAF KARE
-// SAYISI olarak kullanıyor (frame_idx ile indeksleme, gerçek zamanla hiç ilgisi yok).
-// ASSUMED_TRAIN_FPS=30 varsayımı sadece ÇOK ÖNCEKİ REHAB24-6-only döneminden (o veri seti
-// gerçekten 30fps'ti) kalma bir mirastı — GAVD/WeightGait/Toronto'nun karışık kaynaklı ham
-// videolarının native fps'i muhtemelen 30'dan farklı, bu yüzden pencereyi zorla 3.667 gerçek
-// saniyeye interpolasyonla sıkıştırmak/uzatmak modele SİSTEMATİK OLARAK YANLIŞ HIZDA bir
-// yürüyüş besliyordu. KANIT: classify_test_video_offline.py (native fps, resampling yok) AYNI
-// videoyu ve AYNI checkpoint'i kullanarak "normal" diyor (probNormal 0.56-0.76), canlı (zamana
-// göre zorla yeniden örnekleyen eski kod) ise ısrarla "anormal" diyordu.
+// resampling/normalize olmadan okuyor; data_utils.py sliding_windows_from_full_video de
+// WINDOW_FRAMES=110'u SAF KARE SAYISI olarak kullanıyor (frame_idx ile indeksleme, gerçek
+// zamanla hiç ilgisi yok). KALICI ÇÖZÜM: pencereyi KARE SAYISINA göre oluştur (son WINDOW_FRAMES
+// ham push edilmiş kare, interpolasyon/resampling YOK) — offline'la simetrik.
 //
-// KALICI ÇÖZÜM: offline'la BİREBİR SİMETRİK ol — pencereyi KARE SAYISINA göre oluştur (son
-// WINDOW_FRAMES ham push edilmiş kare, interpolasyon/resampling YOK), gerçek süresi ne olursa
-// olsun (tıpkı offline'da farklı native-fps videoların da öyle işlenmesi gibi).
+// SONRADAN DÜZELTME #3 (bkz. konuşma — check_native_fps.py ölçümü): kare-sayısı bazlı pencereye
+// geçince DEBUG_LOG'da windowImpliedFps=34-60 görüldü — push() hiç sınırlanmadığında tarayıcı
+// GAVD/Toronto'nun native fps'inden (ÖLÇÜLDÜ: GAVD median=29.97fps n=229, Toronto median=29.50fps
+// n=28 — yani ASSUMED_TRAIN_FPS=30 GAVD/Toronto için doğruydu) çok daha hızlı yakalıyor, bu da
+// pencereyi eğitimdekinden ÇOK DAHA KISA gerçek süreye sıkıştırıp modele "hızlandırılmış" bir
+// yürüyüş besliyordu. (Not: WeightGait TAMAMEN farklı bir native fps'te — sabit 7.00fps — bu
+// kaynağın kendi eğitim-tarafı ayrı bir düzeltme gerektiriyor, bkz. build_gavd_dataset.py
+// --window-frames/--stride-frames ve o script'in weightgait'e özel yeniden-oluşturulması;
+// LivePractice/gaitClassifier.ts SADECE GAVD/Toronto'nun ~30fps native rejimini hedefliyor.)
+// Bu yüzden push()'u GAVD/Toronto'nun ÖLÇÜLEN native fps'ine (~30) throttle ediyoruz — daha
+// hızlı gelen kareler ATLANIR (bir önceki throttle denemesinden FARKI: o zaman bu tahmindi,
+// şimdi doğrudan ölçüme dayanıyor).
+const TARGET_PUSH_FPS = 30
+const MIN_PUSH_INTERVAL_SEC = 1 / TARGET_PUSH_FPS
+
 // Bellek/duraklama güvenliği için buffer'ı yine de makul bir üst sınırla tutuyoruz (gerçek
 // pencere boyutuyla ilgisi yok, sadece video duraklatılırsa vs. sonsuz büyümesin diye).
 const MAX_BUFFER_FRAMES = WINDOW_FRAMES * 3
@@ -117,6 +123,7 @@ export class LiveGaitClassifier {
   private buffer: BufferedFrame[] = []
   private totalPushed = 0
   private lastInferAtPushCount = 0
+  private lastPushAtT = -Infinity
 
   get ready(): boolean {
     return this.session != null
@@ -134,9 +141,12 @@ export class LiveGaitClassifier {
     return this.loadPromise
   }
 
-  /** Her karede çağrılır — buffer'a ham (zaman damgalı) kareyi ekler. KARE SAYISINA göre
-   * sınırlanıyor (bkz. yukarıdaki yorum — offline'la simetrik olsun diye), zamana göre DEĞİL. */
+  /** Her karede çağrılır. GAVD/Toronto'nun ölçülen native fps'ine (~30) throttle edilir — tarayıcı
+   * daha hızlı üretiyorsa fazla kareler ATLANIR (bkz. yukarıdaki "DÜZELTME #3" yorumu). Kabul
+   * edilen kareler KARE SAYISINA göre tamponlanır (offline'la simetrik), zamana göre DEĞİL. */
   push(byName: Record<string, Point2D | undefined>, angles: LiveAngles, tSec: number = performance.now() / 1000): void {
+    if (tSec - this.lastPushAtT < MIN_PUSH_INTERVAL_SEC) return
+    this.lastPushAtT = tSec
     this.buffer.push({ byName, angles, t: tSec })
     this.totalPushed++
     while (this.buffer.length > MAX_BUFFER_FRAMES) this.buffer.shift()
@@ -297,5 +307,6 @@ export class LiveGaitClassifier {
     this.buffer = []
     this.totalPushed = 0
     this.lastInferAtPushCount = 0
+    this.lastPushAtT = -Infinity
   }
 }
