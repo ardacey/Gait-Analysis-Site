@@ -371,7 +371,11 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       // artan olduğu için bu kontrol orada hiç tetiklenmez, zararsız.
       if (video.currentTime < lastVideoTimeRef.current - 0.5) {
         gaitClassifierRef.current.reset()
-        rawDumpRef.current = [] // GEÇİCİ TEŞHİS: tek temiz geçiş biriksin, döngüler karışmasın.
+        // NOT: rawDumpRef BİLEREK sıfırlanmıyor — GEÇİCİ TEŞHİS dökümü döngüler arasında da
+        // birikmeye devam etsin (video_t alanı sayesinde offline'la zaman bazlı eşleşme zaten
+        // doğru kalıyor, döngü sınırı sorun değil) — kullanıcı Shift+D'yi ne zaman basarsa
+        // bassın yeterli kare birikmiş olsun diye (bkz. konuşma — ilk denemede sadece 27 kare
+        // yakalanmıştı, tam bir video turu tamamlanmadan basılmış olabilir).
       }
       lastVideoTimeRef.current = video.currentTime
 
