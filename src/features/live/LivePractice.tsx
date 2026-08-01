@@ -149,6 +149,15 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   // maybeClassify çağrıları no-op'a yakın davranır (sadece küçük bir bellek buffer'ı doldurur).
   const gaitClassifierRef = useRef(new LiveGaitClassifier())
 
+  // GEÇİCİ TEŞHİS: canlı (TF.js MoveNet) ile offline (TF-Hub MoveNet, movenet_pose_extractor.py)
+  // arasındaki DEBUG_LOG farkını (xChannelMeanAbs canlıda offline'ın ~1/2.7'si) kesin olarak
+  // ayırt etmek için — canlının ürettiği HAM (smoothing/normalize öncesi) keypoint'leri offline
+  // JSON şemasıyla ({"frames":[{"frame_idx","keypoints","angles"}]}) BİREBİR AYNI biçimde
+  // biriktirip Shift+D ile indirilebilir hale getiriyor. Sadece bu diagnostik için, kalıcı
+  // özellik DEĞİL — kök neden bulununca kaldırılabilir.
+  const rawDumpRef = useRef<{ frame_idx: number; video_t: number; keypoints: Record<string, { x: number; y: number; score: number }>; angles: Record<string, number> }[]>([])
+  const MAX_RAW_DUMP_FRAMES = 3000
+
   const [mode, setMode] = useState<Mode>('camera')
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [modelReady, setModelReady] = useState(false)
@@ -182,6 +191,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
     freezeCheckRef.current = { lastPos: null, stableSinceT: null }
     gaitClassifierRef.current.reset()
+    rawDumpRef.current = []
     setGraphData([])
     setLiveFeedback([])
     setGaitClassification(null)
@@ -255,6 +265,28 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       console.warn('Deneysel yürüyüş sınıflandırma modeli yüklenemedi (opsiyonel özellik, göz ardı edilebilir):', e)
     })
   }, [modelReady])
+
+  // GEÇİCİ TEŞHİS: Shift+D ile rawDumpRef'i offline JSON şemasıyla ({"frames":[...]}) AYNI
+  // biçimde indir (movenet_pose_extractor.py çıktısıyla frame-frame karşılaştırma için, bkz.
+  // konuşma — xChannelMeanAbs canlı/offline farkı). Video dosyasını bir kez baştan sona
+  // oynattıktan sonra tetiklenmesi yeterli.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'D' || !e.shiftKey) return
+      const frames = rawDumpRef.current
+      if (frames.length === 0) { console.warn('[rawDump] Henüz biriktirilmiş kare yok.'); return }
+      const blob = new Blob([JSON.stringify({ frames })], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'live_raw_keypoints_dump.json'
+      a.click()
+      URL.revokeObjectURL(url)
+      console.log(`[rawDump] ${frames.length} kare indirildi.`)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // ── Kaynak bağlama — model hazır olunca ve mod/dosya değiştikçe ──────────
   useEffect(() => {
@@ -339,6 +371,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       // artan olduğu için bu kontrol orada hiç tetiklenmez, zararsız.
       if (video.currentTime < lastVideoTimeRef.current - 0.5) {
         gaitClassifierRef.current.reset()
+        rawDumpRef.current = [] // GEÇİCİ TEŞHİS: tek temiz geçiş biriksin, döngüler karışmasın.
       }
       lastVideoTimeRef.current = video.currentTime
 
@@ -470,6 +503,22 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         // sadece küçük bir bellek buffer'ı biriktirir, hiçbir hesaplama tetiklemez (bkz.
         // gaitClassifier.ts push/maybeClassify ayrımı).
         gaitClassifierRef.current.push(byName, angles)
+
+        // GEÇİCİ TEŞHİS dökümü (bkz. yukarıdaki rawDumpRef yorumu) — offline JSON şemasıyla
+        // AYNI biçimde, sadece score>0 olan keypoint'ler ve NaN olmayan açılar.
+        if (rawDumpRef.current.length < MAX_RAW_DUMP_FRAMES) {
+          const kpOut: Record<string, { x: number; y: number; score: number }> = {}
+          for (const name of MOVENET_KEYPOINT_NAMES) {
+            const p = byName[name]
+            if (p) kpOut[name] = { x: p.x, y: p.y, score: p.score ?? 0 }
+          }
+          const angOut: Record<string, number> = {}
+          for (const key of Object.keys(angles) as (keyof LiveAngles)[]) {
+            const v = angles[key]
+            if (!Number.isNaN(v)) angOut[key] = v
+          }
+          rawDumpRef.current.push({ frame_idx: rawDumpRef.current.length, video_t: video.currentTime, keypoints: kpOut, angles: angOut })
+        }
 
         for (const key of Object.keys(ANGLE_LABELS) as (keyof LiveAngles)[]) {
           const val = angles[key]
