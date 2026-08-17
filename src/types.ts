@@ -1,5 +1,9 @@
 export type AnalysisMethod = 'metrabs' | 'hrnet_stgcn'
-export type StgcnLabel = 'correct' | 'incorrect'
+// 'correct'/'incorrect': eski kayıtlar (REHAB24-6 egzersiz-doğruluğu modeli dönemi);
+// 'normal'/'abnormal': GAVD yürüyüş-anormalliği modeline geçiş sonrası (bkz.
+// hrnet_stgcn_worker.py — checkpoint gavd_gait_v1'e bağlandı). DB'de her iki dönemin
+// kayıtları da duruyor, UI ikisini de göstermeli.
+export type StgcnLabel = 'correct' | 'incorrect' | 'normal' | 'abnormal'
 
 export interface VideoRecord {
   id: number

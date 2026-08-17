@@ -423,6 +423,19 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
   // hrnet_stgcn pipeline'ında gait_phase her zaman 'n/a' (bkz. feature_extraction_2d.py) —
   // bu videolar için anlamsız faz rozeti/dağılımı yerine ST-GCN sınıflandırma sonucunu gösteriyoruz.
   const isHrnetStgcn = video.analysis_method === 'hrnet_stgcn'
+  // ST-GCN etiket iki dönemden gelebilir (bkz. types.ts StgcnLabel): eski kayıtlar
+  // correct/incorrect (egzersiz-doğruluğu), yeniler normal/abnormal (yürüyüş-anormalliği).
+  // 'correct' ve 'normal' olumlu (yeşil) sınıf.
+  const isPositiveLabel = (l: string) => l === 'correct' || l === 'normal'
+  const labelText = (l: string, short = false) => {
+    switch (l) {
+      case 'correct': return short ? 'Doğru' : 'Doğru İcra'
+      case 'incorrect': return short ? 'Hatalı' : 'Hatalı İcra'
+      case 'normal': return short ? 'Normal' : 'Normal Yürüyüş'
+      case 'abnormal': return short ? 'Anormal' : 'Anormal Yürüyüş'
+      default: return l
+    }
+  }
   const phaseInfo = frame && !isHrnetStgcn
     ? (GAIT_PHASE_LABELS[frame.gait_phase] ?? { label: frame.gait_phase, color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' })
     : null
@@ -443,17 +456,17 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
           )}
           {classification && (
             <span
-              title={`ST-GCN: %${(classification.confidence * 100).toFixed(0)} güvenle ${classification.label === 'correct' ? 'doğru' : 'hatalı'} icra`}
+              title={`ST-GCN: %${(classification.confidence * 100).toFixed(0)} güvenle ${labelText(classification.label)}`}
               className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${
-                classification.label === 'correct'
+                isPositiveLabel(classification.label)
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                   : 'bg-red-500/20 text-red-300 border-red-500/40'
               }`}
             >
-              {classification.label === 'correct'
+              {isPositiveLabel(classification.label)
                 ? <CheckCircle2 className="w-3.5 h-3.5" />
                 : <XCircle className="w-3.5 h-3.5" />}
-              {classification.label === 'correct' ? 'Doğru İcra' : 'Hatalı İcra'} · %{(classification.confidence * 100).toFixed(0)}
+              {labelText(classification.label)} · %{(classification.confidence * 100).toFixed(0)}
             </span>
           )}
         </div>
@@ -533,8 +546,8 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                     return (
                       <div
                         key={i}
-                        title={`Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${w.label === 'correct' ? 'Doğru' : 'Hatalı'} · %${(w.confidence * 100).toFixed(0)}`}
-                        className={`absolute top-0 h-full opacity-70 ${w.label === 'correct' ? 'bg-emerald-500' : 'bg-red-500'}`}
+                        title={`Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)}`}
+                        className={`absolute top-0 h-full opacity-70 ${isPositiveLabel(w.label) ? 'bg-emerald-500' : 'bg-red-500'}`}
                         style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                       />
                     )
