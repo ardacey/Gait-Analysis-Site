@@ -104,9 +104,20 @@ const DEBUG_LOG = true
 
 export interface GaitClassification {
   label: 'normal' | 'abnormal'
-  probNormal: number // sigmoid(logit) — eğitimde label=1=normal yürüyüş (bkz. download_gavd.py)
+  probNormal: number // son AGG_MAX_WINDOWS pencerenin ORTALAMA sigmoid(logit)'i — bkz. AGG_MAX_WINDOWS yorumu
   confidence: number
+  windowProbNormal: number // SADECE bu pencerenin sigmoid(logit)'i (aggregation öncesi ham değer)
+  nAggWindows: number // ortalamaya giren pencere sayısı (1..AGG_MAX_WINDOWS)
 }
+
+// Pencere-düzeyi karar gürültülü: TRUBA'daki per-video hata analizi (eval_per_video.py,
+// gavd_gait_extra_normal_v1 test split) pencere-düzeyi acc=0.886 iken pencere-ortalaması
+// video-düzeyi acc=0.970 ölçtü — tek pencere kararları aynı videoda 0.16-0.72 arası
+// salınabiliyor (vanilla_walk offline'da da aynı desen). Bu yüzden rozet, SON
+// AGG_MAX_WINDOWS pencerenin ortalama probNormal'ine göre belirleniyor. 5 pencere x
+// STRIDE_DURATION_SEC (~1.83sn) ≈ son ~9sn'lik yürüyüşü kapsar — canlı geri bildirim için
+// yeterince taze, tek-pencere gürültüsünü bastıracak kadar geniş.
+const AGG_MAX_WINDOWS = 5
 
 function median(sortedAsc: number[]): number {
   const n = sortedAsc.length
@@ -121,6 +132,7 @@ export class LiveGaitClassifier {
   private loadPromise: Promise<void> | null = null
   private buffer: BufferedFrame[] = []
   private lastInferAtT = -Infinity
+  private recentWindowProbs: number[] = []
 
   get ready(): boolean {
     return this.session != null
@@ -165,7 +177,13 @@ export class LiveGaitClassifier {
 
     const results = await this.session.run({ x, lengths })
     const logit = Number(results.logit.data[0])
-    const probNormal = 1 / (1 + Math.exp(-logit))
+    const windowProbNormal = 1 / (1 + Math.exp(-logit))
+
+    // Aggregation (bkz. AGG_MAX_WINDOWS yorumu) — karar tek pencereye değil son pencerelerin
+    // ortalamasına dayanıyor.
+    this.recentWindowProbs.push(windowProbNormal)
+    if (this.recentWindowProbs.length > AGG_MAX_WINDOWS) this.recentWindowProbs.shift()
+    const probNormal = this.recentWindowProbs.reduce((s, p) => s + p, 0) / this.recentWindowProbs.length
     const label: 'normal' | 'abnormal' = probNormal >= 0.5 ? 'normal' : 'abnormal'
     const confidence = label === 'normal' ? probNormal : 1 - probNormal
 
@@ -193,11 +211,12 @@ export class LiveGaitClassifier {
         angleChannelPresentFrac: (anglePresentCount / WINDOW_FRAMES).toFixed(2),
         xChannelMin: xMin.toFixed(3), xChannelMax: xMax.toFixed(3),
         xChannelMeanAbs: (xAbsSum / nNodes).toFixed(3),
-        logit: logit.toFixed(4), probNormal: probNormal.toFixed(4), label,
+        logit: logit.toFixed(4), windowProbNormal: windowProbNormal.toFixed(4),
+        aggProbNormal: probNormal.toFixed(4), nAggWindows: this.recentWindowProbs.length, label,
       })
     }
 
-    return { label, probNormal, confidence }
+    return { label, probNormal, confidence, windowProbNormal, nAggWindows: this.recentWindowProbs.length }
   }
 
   /** t zamanındaki değeri, buffer'daki en yakın iki ham kare arasında lineer interpolasyonla
@@ -350,5 +369,8 @@ export class LiveGaitClassifier {
   reset(): void {
     this.buffer = []
     this.lastInferAtT = -Infinity
+    // Video döngüsü/kaynak değişimi = yeni oturum; önceki pencere olasılıkları yeni içerikle
+    // ilgisiz, ortalamayı kirletmesin.
+    this.recentWindowProbs = []
   }
 }
