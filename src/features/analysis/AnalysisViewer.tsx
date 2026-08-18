@@ -34,6 +34,12 @@ const PHASE_BAR_CLASS: Record<string, string> = {
   loading_response: 'bg-yellow-500',
   mid_stance:       'bg-emerald-500',
   stance:           'bg-slate-500',
+  // HRNet bacak-başına fazlar — GAIT_PHASE_LABELS ile aynı renk aileleri; eksik kalınca
+  // hepsi gri fallback'e düşüyordu (dağılım çubuğu tek renk görünüyordu)
+  double_support:   'bg-emerald-500',
+  l_swing:          'bg-blue-500',
+  r_swing:          'bg-cyan-500',
+  double_float:     'bg-slate-500',
 }
 
 const ANGLE_LABELS: Record<string, string> = {
@@ -168,6 +174,8 @@ function processMetric(key: string, raw: number): MetricInfo {
 const PHASE_TR: Record<string, string> = {
   swing: 'Salınım', stance: 'Duruş', mid_stance: 'Orta Duruş',
   loading_response: 'Yük Aktarımı', terminal_stance: 'Terminal Duruş',
+  double_support: 'Çift Destek', l_swing: 'Sol Salınım', r_swing: 'Sağ Salınım',
+  double_float: 'Belirsiz', 'n/a': 'Geçersiz Kare',
 }
 
 function generateReport(data: AnalysisData, filename: string) {
@@ -385,6 +393,10 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
         if (info) {
           phaseBadgeRef.current.textContent = info.label
           phaseBadgeRef.current.className = `text-xs px-2 py-0.5 rounded-full border font-medium ${info.color}`
+        } else {
+          // 'n/a' (geçersiz kare) — eski fazda takılı kalmasın, nötr göster
+          phaseBadgeRef.current.textContent = '—'
+          phaseBadgeRef.current.className = 'text-xs px-2 py-0.5 rounded-full border font-medium bg-slate-500/20 text-slate-400 border-slate-500/40'
         }
       }
       // Move graph cursor line (accounts for recharts margins: left≈30px, right≈8px)
@@ -416,6 +428,9 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
       if (info) {
         phaseBadgeRef.current.textContent = info.label
         phaseBadgeRef.current.className = `text-xs px-2 py-0.5 rounded-full border font-medium ${info.color}`
+      } else {
+        phaseBadgeRef.current.textContent = '—'
+        phaseBadgeRef.current.className = 'text-xs px-2 py-0.5 rounded-full border font-medium bg-slate-500/20 text-slate-400 border-slate-500/40'
       }
     }
     if (graphLineRef.current) {
