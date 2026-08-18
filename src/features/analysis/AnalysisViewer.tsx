@@ -15,11 +15,17 @@ interface AnalysisViewerProps {
 }
 
 const GAIT_PHASE_LABELS: Record<string, { label: string; color: string }> = {
+  // MeTRAbs dönemi etiketleri (eski kayıtlar)
   swing:             { label: 'Salınım',        color: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
   terminal_stance:   { label: 'Terminal Duruş', color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
   loading_response:  { label: 'Yük Aktarımı',   color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' },
   mid_stance:        { label: 'Orta Duruş',     color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
   stance:            { label: 'Duruş',          color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' },
+  // HRNet bacak-başına faz etiketleri (feature_extraction_2d.compute_gait_events)
+  double_support:    { label: 'Çift Destek',    color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+  l_swing:           { label: 'Sol Salınım',    color: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
+  r_swing:           { label: 'Sağ Salınım',    color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
+  double_float:      { label: 'Belirsiz',       color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' },
 }
 
 const PHASE_BAR_CLASS: Record<string, string> = {
@@ -99,6 +105,31 @@ const METRIC_LABELS: Record<string, string> = {
   l_elbow_rom:                        'Sol Dirsek ROM',
   r_elbow_rom:                        'Sağ Dirsek ROM',
   valid_frame_ratio:                  'Geçerli Kare Oranı',
+  // Olay tespiti / faz metrikleri (compute_gait_events)
+  stance_pct_l:                       'Sol Duruş Fazı',
+  stance_pct_r:                       'Sağ Duruş Fazı',
+  swing_pct_l:                        'Sol Salınım Fazı',
+  swing_pct_r:                        'Sağ Salınım Fazı',
+  double_support_pct:                 'Çift Destek',
+  stride_time_l_mean:                 'Sol Yürüyüş Döngü Süresi',
+  stride_time_r_mean:                 'Sağ Yürüyüş Döngü Süresi',
+  step_time_l_mean:                   'Sol Adım Süresi',
+  step_time_r_mean:                   'Sağ Adım Süresi',
+  step_length_l_mean:                 'Sol Adım Uzunluğu',
+  step_length_r_mean:                 'Sağ Adım Uzunluğu',
+  step_length_cv_pct:                 'Adım Uzunluğu Değişkenliği (CV)',
+  step_length_lr_diff_pct:            'Sol/Sağ Adım Uzunluğu Farkı',
+  trunk_sway_rms_mm:                  'Gövde Salınımı (RMS)',
+  l_knee_stance_mean:                 'Sol Diz Açısı — Duruş Fazı',
+  r_knee_stance_mean:                 'Sağ Diz Açısı — Duruş Fazı',
+  l_knee_swing_mean:                  'Sol Diz Açısı — Salınım Fazı',
+  r_knee_swing_mean:                  'Sağ Diz Açısı — Salınım Fazı',
+  l_knee_swing_min_angle:             'Sol Diz Tepe Fleksiyon (Salınım)',
+  r_knee_swing_min_angle:             'Sağ Diz Tepe Fleksiyon (Salınım)',
+  l_hip_stance_mean:                  'Sol Kalça Açısı — Duruş Fazı',
+  r_hip_stance_mean:                  'Sağ Kalça Açısı — Duruş Fazı',
+  l_hip_swing_mean:                   'Sol Kalça Açısı — Salınım Fazı',
+  r_hip_swing_mean:                   'Sağ Kalça Açısı — Salınım Fazı',
 }
 
 interface MetricInfo { label: string; value: string; unit: string }
@@ -112,6 +143,9 @@ function processMetric(key: string, raw: number): MetricInfo {
   if (k === 'valid_frame_ratio')         return { label, value: (raw * 100).toFixed(0), unit: '%' }
   if (k.endsWith('_pct'))                return { label, value: raw.toFixed(1), unit: '%' }
   if (k.includes('_rom') || k.endsWith('_lr_diff')) return { label, value: raw.toFixed(1), unit: '°' }
+  if (k.includes('step_length'))         return { label, value: (raw / 1000).toFixed(3), unit: 'm' }
+  if (k.includes('sway'))                return { label, value: raw.toFixed(0), unit: 'mm' }
+  if (k.includes('stance_mean') || k.includes('swing_mean') || k.includes('swing_min')) return { label, value: raw.toFixed(1), unit: '°' }
   // Distance in mm → m
   if (k.includes('leg_length'))           return { label, value: (raw / 1000).toFixed(3), unit: 'm' }
   if (k.includes('stride_length') || k.includes('step_width')) return { label, value: (raw / 1000).toFixed(3), unit: 'm' }
@@ -444,9 +478,16 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
 
   const phaseDist = useMemo(() => {
     if (!data) return []
+    // 'n/a' kareler (geçersiz/faz üretilmemiş) dağılıma katılmaz — HRNet yolunda videonun
+    // kuyruğu (kişi kadraj dışı) n/a kalabiliyor, dağılım sadece yürüyüş bölgesini yansıtsın.
     const counts: Record<string, number> = {}
-    for (const f of data.frames) counts[f.gait_phase] = (counts[f.gait_phase] ?? 0) + 1
-    const total = data.frames.length
+    let total = 0
+    for (const f of data.frames) {
+      if (f.gait_phase === 'n/a') continue
+      counts[f.gait_phase] = (counts[f.gait_phase] ?? 0) + 1
+      total++
+    }
+    if (total === 0) return []
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([phase, count]) => ({ phase, pct: (count / total) * 100 }))
@@ -469,7 +510,10 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
       default: return l
     }
   }
-  const phaseInfo = frame && !isHrnetStgcn
+  // Faz rozeti: gait_phase üretilmişse göster ('n/a' = HRNet yolunda olay tespiti yetersiz
+  // kaldı ya da eski kayıt — rozet gizlenir). Eskiden hrnet_stgcn tamamen gizliyordu;
+  // compute_gait_events eklendiğinden beri HRNet kayıtları da faz üretiyor.
+  const phaseInfo = frame && frame.gait_phase !== 'n/a'
     ? (GAIT_PHASE_LABELS[frame.gait_phase] ?? { label: frame.gait_phase, color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' })
     : null
   const classification = data?.classification
@@ -595,7 +639,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
             )}
 
             {/* Gait phase distribution bar */}
-            {!isHrnetStgcn && phaseDist.length > 0 && (
+            {phaseDist.length > 0 && (
               <div className="flex flex-col gap-1">
                 <div className="flex h-2 rounded overflow-hidden w-full">
                   {phaseDist.map(({ phase, pct }) => (
