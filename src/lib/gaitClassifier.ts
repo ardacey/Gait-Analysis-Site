@@ -106,11 +106,10 @@ interface BufferedFrame {
   t: number
 }
 
-// GEÇİCİ TEŞHİS ANAHTARI: canlıda yüksek-güvenle sistematik yanlış sınıflandırma (bkz.
-// konuşma — letterbox/pad düzeltmesinden SONRA bile devam etti) araştırılırken, modele
-// gerçekte ne beslendiğini (ölçek, pencere süresi, açı kanalı) doğrudan gözlemlemek için.
-// Kök neden bulunup doğrulandıktan sonra false yapılıp/kaldırılabilir.
-const DEBUG_LOG = true
+// Teşhis anahtarı — modele gerçekte ne beslendiğini (ölçek, pencere süresi, açı kanalı,
+// pencere/aggregate olasılıklar) konsola basar. Kök neden (skor kanalı dağılım kayması,
+// bkz. SCORE_CHANNEL_VALUE) bulunup kapatıldı; yeni bir canlı-taraf şüphesinde tekrar aç.
+const DEBUG_LOG = false
 
 export interface GaitClassification {
   label: 'normal' | 'abnormal'
