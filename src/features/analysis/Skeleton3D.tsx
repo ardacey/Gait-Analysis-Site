@@ -41,15 +41,31 @@ function angleToColor(angle: number): THREE.Color {
   return new THREE.Color('#ef4444')
 }
 
+function safeNumber(value: number): number {
+  return Number.isFinite(value) ? value : 0
+}
+
+function sanitizeJoints(
+  joints: [number, number, number][],
+): [number, number, number][] {
+  return joints.map(j => [
+    safeNumber(j[0]),
+    safeNumber(j[1]),
+    safeNumber(j[2]),
+  ] as [number, number, number])
+}
+
 function centerAndScale(
   joints: [number, number, number][],
   jointNames: string[],
 ): THREE.Vector3[] {
+  const safe = sanitizeJoints(joints)
   const hipIdx = jointNames.indexOf('Hip') >= 0 ? jointNames.indexOf('Hip') : jointNames.indexOf('MidHip')
-  const ref = joints[hipIdx >= 0 ? hipIdx : 0] ?? [0, 0, 0]
-  const maxAbs = joints.flat().reduce((m, v) => Math.max(m, Math.abs(v)), 0)
+  const fallbackIdx = safe.findIndex(j => j.some(v => v !== 0))
+  const ref = safe[hipIdx >= 0 ? hipIdx : fallbackIdx >= 0 ? fallbackIdx : 0] ?? [0, 0, 0]
+  const maxAbs = safe.flat().reduce((m, v) => Math.max(m, Math.abs(v)), 0)
   const scale = maxAbs > 10 ? 0.001 : 1
-  return joints.map(j => new THREE.Vector3(
+  return safe.map(j => new THREE.Vector3(
     (j[0] - ref[0]) * scale,
     -(j[1] - ref[1]) * scale,
     (j[2] - ref[2]) * scale,
