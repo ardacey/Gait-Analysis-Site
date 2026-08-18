@@ -71,6 +71,20 @@ const METRIC_LABELS: Record<string, string> = {
   trunk_angular_acceleration_rms:     'Gövde Açısal İvme (RMS)',
   pelvis_tilt_angular_velocity_rms:   'Pelvis Eğim Açısal Hız (RMS)',
   pelvis_tilt_angular_acceleration_rms:'Pelvis Eğim Açısal İvme (RMS)',
+  // HRNet-2D yürüyüş metrikleri (feature_extraction_2d.compute_gait_metrics — canlı
+  // pratik modülüyle aynı tanımlar: adım=diz vadisi, uzunluk/hız gövde-ölçek yaklaşımı)
+  step_count:                         'Adım Sayısı',
+  step_time_cv_pct:                   'Adım Ritmi Düzensizliği (CV)',
+  step_time_lr_diff_pct:              'Sol/Sağ Adım Süresi Farkı',
+  knee_rom_lr_diff:                   'Diz ROM Sol/Sağ Farkı',
+  hip_angle_mean_lr_diff:             'Kalça Açısı Sol/Sağ Farkı',
+  l_knee_rom:                         'Sol Diz ROM',
+  r_knee_rom:                         'Sağ Diz ROM',
+  l_hip_rom:                          'Sol Kalça ROM',
+  r_hip_rom:                          'Sağ Kalça ROM',
+  l_elbow_rom:                        'Sol Dirsek ROM',
+  r_elbow_rom:                        'Sağ Dirsek ROM',
+  valid_frame_ratio:                  'Geçerli Kare Oranı',
 }
 
 interface MetricInfo { label: string; value: string; unit: string }
@@ -79,6 +93,11 @@ function processMetric(key: string, raw: number): MetricInfo {
   const label = METRIC_LABELS[key] ?? key.replace(/_/g, ' ')
   // Normalized (dimensionless ratio) — check before length/speed
   if (k.includes('normalized'))           return { label, value: raw.toFixed(3), unit: '' }
+  // HRNet-2D yürüyüş metrikleri
+  if (k === 'step_count')                return { label, value: raw.toFixed(0), unit: 'adım' }
+  if (k === 'valid_frame_ratio')         return { label, value: (raw * 100).toFixed(0), unit: '%' }
+  if (k.endsWith('_pct'))                return { label, value: raw.toFixed(1), unit: '%' }
+  if (k.includes('_rom') || k.endsWith('_lr_diff')) return { label, value: raw.toFixed(1), unit: '°' }
   // Distance in mm → m
   if (k.includes('leg_length'))           return { label, value: (raw / 1000).toFixed(3), unit: 'm' }
   if (k.includes('stride_length') || k.includes('step_width')) return { label, value: (raw / 1000).toFixed(3), unit: 'm' }
