@@ -85,15 +85,15 @@ const V = 18 // 17 COCO eklemi + sentetik 'Hip'
 const C = 4  // x_norm, y_norm, skor, açı
 const HIP_IDX = 17
 
-// SKOR KANALI HOTFIX (2026-08-18, bkz. diag_live_offline_2x2.py E/F/G hücreleri): model
-// offline TF-Hub MoveNet çıkarımının DÜŞÜK skor dağılımıyla (ortalama ~0.32) eğitildi;
-// canlı TF.js MoveNet ise sistematik YÜKSEK skor üretiyor (ortalama ~0.62) — skor bir girdi
-// kanalı olduğu için bu dağılım kayması TEK BAŞINA kararı deviriyordu (offline koordinat +
-// canlı skor = 0.049; canlı koordinat + offline skor = 0.906; canlı koordinat + sabit 0.32
-// = 0.951). Modele giden skor kanalı eğitim ortalamasına sabitleniyor; GERÇEK skorlar
-// smoothing/geçerlilik kontrollerinde kullanılmaya devam ediyor. KALICI çözüm: skor kanalsız
-// yeniden eğitim (skor kanalı üçüncü kez kısayol çıktı — Health&Gait hardcode=1.0 dersi).
-const TRAIN_SCORE_MEAN = 0.32
+// SKOR KANALI KALDIRILDI (2026-08-18, kalıcı çözüm — hotfix'in devamı, bkz. git geçmişi
+// 6235b00 ve diag_live_offline_2x2.py): TF-Hub eğitim skorları (~0.32) ile TF.js canlı
+// skorları (~0.62) arasındaki dağılım kayması, skor girdi kanalı üzerinden kararı tek
+// başına deviriyordu. Deploy'daki model (extra-normal-v4-ns, gavd_gait_extra_normal_ytn_ns_s44)
+// GAIT_ZERO_SCORE_CHANNEL=1 ile skor kanalı TAMAMEN SIFIRLANARAK eğitildi — burada da kanala
+// her zaman 0 yazılır. GERÇEK skorlar smoothing/geçerlilik kontrollerinde kullanılmaya devam
+// ediyor. (Skor kanalı üç ayrı olayda kısayol/bug kaynağı çıktı: Health&Gait hardcode=1.0,
+// TF.js dağılım kayması, ve sabit-değer kısayol riski — kanal artık modelin girdisi değil.)
+const SCORE_CHANNEL_VALUE = 0
 
 // MOVENET_KEYPOINT_NAMES ile scripts/stgcn/data_utils.py JOINT_ORDER AYNI COCO-17 sırasında.
 const L_SHOULDER = 5, R_SHOULDER = 6
@@ -351,16 +351,15 @@ export class LiveGaitClassifier {
         const base = (t * V + j) * C
         data[base + 0] = (rawX - hipMidX) / scale
         data[base + 1] = (rawY - hipMidY) / scale
-        // Eklem hiç algılanamadıysa 0 (offline "eksik -> sıfır" konvansiyonu), algılandıysa
-        // TF.js'in kendi skoru DEĞİL eğitim ortalaması (bkz. TRAIN_SCORE_MEAN hotfix yorumu).
-        data[base + 2] = p ? TRAIN_SCORE_MEAN : 0
+        // Skor kanalı modelin girdisi değil (bkz. SCORE_CHANNEL_VALUE yorumu) — her zaman 0.
+        data[base + 2] = SCORE_CHANNEL_VALUE
       }
 
       // Sentetik Hip düğümü — tanım gereği normalize uzayda orijin.
       const hipBase = (t * V + HIP_IDX) * C
       data[hipBase + 0] = 0
       data[hipBase + 1] = 0
-      data[hipBase + 2] = lh && rh ? TRAIN_SCORE_MEAN : 0
+      data[hipBase + 2] = SCORE_CHANNEL_VALUE
 
       // Açı kanalı (derece -> /180 normalize), sadece ilgili 4 düğüme yerleştirilir.
       const a = f.angles
