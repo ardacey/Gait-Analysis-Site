@@ -71,6 +71,20 @@ const METRIC_LABELS: Record<string, string> = {
   trunk_angular_acceleration_rms:     'Gövde Açısal İvme (RMS)',
   pelvis_tilt_angular_velocity_rms:   'Pelvis Eğim Açısal Hız (RMS)',
   pelvis_tilt_angular_acceleration_rms:'Pelvis Eğim Açısal İvme (RMS)',
+  // HRNet-2D eklem açı istatistikleri (feature_extraction_2d summary — taraf-önekli anahtarlar,
+  // yukarıdaki MeTRAbs-dönemi önek-siz anahtarlarla karışmasın)
+  l_knee_angle_mean:                  'Sol Diz Açısı (Ort.)',
+  r_knee_angle_mean:                  'Sağ Diz Açısı (Ort.)',
+  l_hip_angle_mean:                   'Sol Kalça Açısı (Ort.)',
+  r_hip_angle_mean:                   'Sağ Kalça Açısı (Ort.)',
+  l_elbow_angle_mean:                 'Sol Dirsek Açısı (Ort.)',
+  r_elbow_angle_mean:                 'Sağ Dirsek Açısı (Ort.)',
+  l_knee_angular_velocity_rms:        'Sol Diz Açısal Hız (RMS)',
+  r_knee_angular_velocity_rms:        'Sağ Diz Açısal Hız (RMS)',
+  l_hip_angular_velocity_rms:         'Sol Kalça Açısal Hız (RMS)',
+  r_hip_angular_velocity_rms:         'Sağ Kalça Açısal Hız (RMS)',
+  l_elbow_angular_velocity_rms:       'Sol Dirsek Açısal Hız (RMS)',
+  r_elbow_angular_velocity_rms:       'Sağ Dirsek Açısal Hız (RMS)',
   // HRNet-2D yürüyüş metrikleri (feature_extraction_2d.compute_gait_metrics — canlı
   // pratik modülüyle aynı tanımlar: adım=diz vadisi, uzunluk/hız gövde-ölçek yaklaşımı)
   step_count:                         'Adım Sayısı',
