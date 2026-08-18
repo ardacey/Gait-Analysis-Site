@@ -85,6 +85,16 @@ const V = 18 // 17 COCO eklemi + sentetik 'Hip'
 const C = 4  // x_norm, y_norm, skor, açı
 const HIP_IDX = 17
 
+// SKOR KANALI HOTFIX (2026-08-18, bkz. diag_live_offline_2x2.py E/F/G hücreleri): model
+// offline TF-Hub MoveNet çıkarımının DÜŞÜK skor dağılımıyla (ortalama ~0.32) eğitildi;
+// canlı TF.js MoveNet ise sistematik YÜKSEK skor üretiyor (ortalama ~0.62) — skor bir girdi
+// kanalı olduğu için bu dağılım kayması TEK BAŞINA kararı deviriyordu (offline koordinat +
+// canlı skor = 0.049; canlı koordinat + offline skor = 0.906; canlı koordinat + sabit 0.32
+// = 0.951). Modele giden skor kanalı eğitim ortalamasına sabitleniyor; GERÇEK skorlar
+// smoothing/geçerlilik kontrollerinde kullanılmaya devam ediyor. KALICI çözüm: skor kanalsız
+// yeniden eğitim (skor kanalı üçüncü kez kısayol çıktı — Health&Gait hardcode=1.0 dersi).
+const TRAIN_SCORE_MEAN = 0.32
+
 // MOVENET_KEYPOINT_NAMES ile scripts/stgcn/data_utils.py JOINT_ORDER AYNI COCO-17 sırasında.
 const L_SHOULDER = 5, R_SHOULDER = 6
 const L_HIP = 11, R_HIP = 12
@@ -338,18 +348,19 @@ export class LiveGaitClassifier {
         const p = f.byName[MOVENET_KEYPOINT_NAMES[j]]
         const rawX = p ? p.x : 0
         const rawY = p ? p.y : 0
-        const score = p ? (p.score ?? 0) : 0
         const base = (t * V + j) * C
         data[base + 0] = (rawX - hipMidX) / scale
         data[base + 1] = (rawY - hipMidY) / scale
-        data[base + 2] = score
+        // Eklem hiç algılanamadıysa 0 (offline "eksik -> sıfır" konvansiyonu), algılandıysa
+        // TF.js'in kendi skoru DEĞİL eğitim ortalaması (bkz. TRAIN_SCORE_MEAN hotfix yorumu).
+        data[base + 2] = p ? TRAIN_SCORE_MEAN : 0
       }
 
-      // Sentetik Hip düğümü — tanım gereği normalize uzayda orijin, skor = (L_Hip+R_Hip)/2.
+      // Sentetik Hip düğümü — tanım gereği normalize uzayda orijin.
       const hipBase = (t * V + HIP_IDX) * C
       data[hipBase + 0] = 0
       data[hipBase + 1] = 0
-      data[hipBase + 2] = ((lh?.score ?? 0) + (rh?.score ?? 0)) / 2
+      data[hipBase + 2] = lh && rh ? TRAIN_SCORE_MEAN : 0
 
       // Açı kanalı (derece -> /180 normalize), sadece ilgili 4 düğüme yerleştirilir.
       const a = f.angles
