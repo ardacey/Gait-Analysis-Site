@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import {
   Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus,
-  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film, Box, Boxes, Camera,
+  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film, Camera,
 } from 'lucide-react'
 
 import type { AnalysisMethod, UserRole, VideoRecord } from '../../types'
@@ -69,7 +69,8 @@ export function Dashboard({
 
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [method, setMethod] = useState<AnalysisMethod>('metrabs')
+  // Tek aktif yöntem (bkz. yöntem seçicinin kaldırıldığı yerdeki yorum) — setMethod bilinçli yok.
+  const [method] = useState<AnalysisMethod>('hrnet_stgcn')
   const dragCounter = useRef(0)
 
   function onDragEnter(e: React.DragEvent) {
@@ -142,30 +143,10 @@ export function Dashboard({
         {isPatient && (
           <div className="space-y-3">
 
-            {/* Analiz yöntemi seçici */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-500">Analiz Yöntemi:</span>
-              <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 gap-1">
-                <button
-                  type="button"
-                  disabled={isUploading}
-                  onClick={() => setMethod('metrabs')}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors
-                    ${method === 'metrabs' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-                >
-                  <Box className="w-3.5 h-3.5" /> 3D Analiz (MeTRAbs)
-                </button>
-                <button
-                  type="button"
-                  disabled={isUploading}
-                  onClick={() => setMethod('hrnet_stgcn')}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors
-                    ${method === 'hrnet_stgcn' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-                >
-                  <Boxes className="w-3.5 h-3.5" /> 2D Analiz (HRNet + ST-GCN)
-                </button>
-              </div>
-            </div>
+            {/* MeTRAbs (3D) yolu emekliye ayrıldı (2026-08-18): TRUBA gpu_worker'ı durduruldu,
+                yeni yüklemeler her zaman hrnet_stgcn ile işleniyor. Eski MeTRAbs kayıtları
+                görüntülenmeye devam eder (AnalysisViewer + METHOD_LABELS 'metrabs'i tanıyor);
+                yöntem geri getirilecekse buradaki seçici git geçmişinden geri alınabilir. */}
 
             <div
               onDragEnter={onDragEnter}
