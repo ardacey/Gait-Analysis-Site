@@ -38,6 +38,9 @@ export type Database = {
           analysis_method: 'metrabs' | 'hrnet_stgcn'
           stgcn_label: 'correct' | 'incorrect' | null
           stgcn_confidence: number | null
+          doctor_note: string | null
+          doctor_note_by: string | null
+          doctor_note_at: string | null
         }
         Insert: {
           id?: number
@@ -54,6 +57,9 @@ export type Database = {
           analysis_method?: 'metrabs' | 'hrnet_stgcn'
           stgcn_label?: 'correct' | 'incorrect' | null
           stgcn_confidence?: number | null
+          doctor_note?: string | null
+          doctor_note_by?: string | null
+          doctor_note_at?: string | null
         }
         Update: {
           id?: number
@@ -70,6 +76,9 @@ export type Database = {
           analysis_method?: 'metrabs' | 'hrnet_stgcn'
           stgcn_label?: 'correct' | 'incorrect' | null
           stgcn_confidence?: number | null
+          doctor_note?: string | null
+          doctor_note_by?: string | null
+          doctor_note_at?: string | null
         }
         Relationships: []
       }

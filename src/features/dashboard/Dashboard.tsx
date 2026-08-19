@@ -7,6 +7,7 @@ import {
 
 import type { AnalysisMethod, UserRole, VideoRecord } from '../../types'
 import { RecordingGuide } from './RecordingGuide'
+import { useLang, LangToggle } from '../../lib/i18n'
 
 interface DashboardProps {
   role: UserRole
@@ -87,6 +88,7 @@ export function Dashboard({
   setActiveVideo, confirmDelete, openAnalysis, onOpenLive,
 }: DashboardProps) {
 
+  const { t } = useLang()
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   // Tek aktif yöntem (bkz. yöntem seçicinin kaldırıldığı yerdeki yorum) — setMethod bilinçli yok.
@@ -280,8 +282,9 @@ export function Dashboard({
               title="Canlı Pratik (Beta)"
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
             >
-              <Camera className="w-3.5 h-3.5" /> Canlı Pratik
+              <Camera className="w-3.5 h-3.5" /> {t('dash.livePractice')}
             </button>
+            <LangToggle className="bg-white border-slate-200 text-slate-500 hover:bg-slate-50" />
             <button
               type="button"
               onClick={onLogout}
@@ -301,10 +304,10 @@ export function Dashboard({
         {!loadingVideos && videos.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Toplam Video', value: stats.total, cls: 'text-slate-700' },
-              { label: 'Tamamlanan', value: stats.done, cls: 'text-emerald-600' },
-              { label: 'Bekleyen', value: stats.pending, cls: 'text-amber-600' },
-              { label: 'Anormal Bulgu', value: stats.abnormal, cls: 'text-red-600' },
+              { label: t('dash.stats.total'), value: stats.total, cls: 'text-slate-700' },
+              { label: t('dash.stats.done'), value: stats.done, cls: 'text-emerald-600' },
+              { label: t('dash.stats.pending'), value: stats.pending, cls: 'text-amber-600' },
+              { label: t('dash.stats.abnormal'), value: stats.abnormal, cls: 'text-red-600' },
             ].map(c => (
               <div key={c.label} className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3">
                 <div className={`text-2xl font-bold ${c.cls}`}>{c.value}</div>
@@ -348,7 +351,7 @@ export function Dashboard({
                   Yürüyüş Analizi
                 </p>
                 <h2 className="text-2xl font-bold text-white mb-2">
-                  {isDragging ? 'Dosyayı bırakın' : 'Yeni Analiz Başlat'}
+                  {isDragging ? 'Dosyayı bırakın' : t('dash.newAnalysis')}
                 </h2>
                 <p className="text-blue-200/80 text-sm max-w-sm leading-relaxed">
                   {isDragging
@@ -382,7 +385,7 @@ export function Dashboard({
               onClick={() => setShowGuide(true)}
               className="text-xs text-blue-600 hover:text-blue-700 hover:underline font-medium"
             >
-              📋 Nasıl video çekmeliyim? — çekim rehberi
+              {t('dash.guide')}
             </button>
           </div>
         )}
@@ -394,8 +397,8 @@ export function Dashboard({
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold text-slate-700 flex items-center gap-2">
               {isPatient
-                ? <><Film className="w-4 h-4 text-blue-500" /> Videolarım</>
-                : <><UserPlus className="w-4 h-4 text-emerald-500" /> Bekleyen Hasta Videoları</>
+                ? <><Film className="w-4 h-4 text-blue-500" /> {t('dash.myVideos')}</>
+                : <><UserPlus className="w-4 h-4 text-emerald-500" /> {t('dash.pendingVideos')}</>
               }
               {!loadingVideos && videos.length > 0 && (
                 <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredVideos.length}/{videos.length}</span>

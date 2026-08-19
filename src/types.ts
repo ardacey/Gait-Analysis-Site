@@ -20,6 +20,10 @@ export interface VideoRecord {
   analysis_method: AnalysisMethod
   stgcn_label: StgcnLabel | null
   stgcn_confidence: number | null
+  // Doktor değerlendirme notu (2026-08-19): doktor analiz ekranından yazar, hasta okur.
+  doctor_note?: string | null
+  doctor_note_by?: string | null
+  doctor_note_at?: string | null
 }
 
 export type UserRole = 'patient' | 'doctor'

@@ -52,7 +52,7 @@ function App() {
       <ToastStack toasts={toasts} onDismiss={removeToast} />
 
       {analysisVideo && (
-        <AnalysisViewer video={analysisVideo} onClose={() => setAnalysisVideo(null)} />
+        <AnalysisViewer video={analysisVideo} role={role} username={username} onClose={() => setAnalysisVideo(null)} />
       )}
 
       {livePracticeOpen && (

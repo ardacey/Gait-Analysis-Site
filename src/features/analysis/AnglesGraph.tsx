@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import type { AnalysisFrame } from '../../types'
 import { ANGLE_RANGES } from '../../lib/angleRanges'
+import { useLang } from '../../lib/i18n'
 
 interface AnglesGraphProps {
   frames: AnalysisFrame[]
@@ -42,6 +43,7 @@ const PHASE_FILL: Record<string, string> = {
 }
 
 export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphProps) {
+  const { t } = useLang()
   const [activeGroup, setActiveGroup] = useState<GroupKey>('Diz')
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
@@ -115,7 +117,7 @@ export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphPr
             {g}
           </button>
         ))}
-        <span className="ml-auto text-xs text-slate-600">kesikli bant = normal aralık · tıkla → frame atla</span>
+        <span className="ml-auto text-xs text-slate-600">{t('analysis.graphHint')}</span>
       </div>
 
       <div ref={chartContainerRef} onClick={handleMouseClick} className="cursor-crosshair">

@@ -3,14 +3,18 @@ import {
   X, Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Activity, Loader2, AlertCircle, FileText, CheckCircle2, XCircle,
 } from 'lucide-react'
-import type { AnalysisData, AnalysisFrame, FeedbackItem, VideoRecord } from '../../types'
+import type { AnalysisData, AnalysisFrame, FeedbackItem, UserRole, VideoRecord } from '../../types'
+import supabase from '../../lib/supabaseClient'
 import { GaitFeedback } from '../../components/analysis/GaitFeedback'
 import { Skeleton3D, type Skeleton3DHandle } from './Skeleton3D'
 import { AnglesGraph } from './AnglesGraph'
 import { getAngleColor } from '../../lib/angleRanges'
+import { useLang } from '../../lib/i18n'
 
 interface AnalysisViewerProps {
   video: VideoRecord
+  role: UserRole
+  username: string
   onClose: () => void
 }
 
@@ -138,10 +142,57 @@ const METRIC_LABELS: Record<string, string> = {
   r_hip_swing_mean:                   'Sağ Kalça Açısı — Salınım Fazı',
 }
 
+const METRIC_LABELS_EN: Record<string, string> = {
+  cadence: 'Cadence', walking_speed: 'Walking Speed', stride_length_mean: 'Step Length (Mean)',
+  step_count: 'Step Count', step_time_mean: 'Step Time (Mean)',
+  step_time_cv_pct: 'Step Rhythm Variability (CV)', step_time_lr_diff_pct: 'L/R Step Time Diff',
+  knee_rom_lr_diff: 'Knee ROM L/R Diff', hip_angle_mean_lr_diff: 'Hip Angle L/R Diff',
+  l_knee_rom: 'Left Knee ROM', r_knee_rom: 'Right Knee ROM', l_hip_rom: 'Left Hip ROM',
+  r_hip_rom: 'Right Hip ROM', l_elbow_rom: 'Left Elbow ROM', r_elbow_rom: 'Right Elbow ROM',
+  valid_frame_ratio: 'Valid Frame Ratio', stance_pct_l: 'Left Stance Phase',
+  stance_pct_r: 'Right Stance Phase', swing_pct_l: 'Left Swing Phase', swing_pct_r: 'Right Swing Phase',
+  double_support_pct: 'Double Support', stride_time_l_mean: 'Left Stride Time',
+  stride_time_r_mean: 'Right Stride Time', step_time_l_mean: 'Left Step Time',
+  step_time_r_mean: 'Right Step Time', step_length_l_mean: 'Left Step Length',
+  step_length_r_mean: 'Right Step Length', step_length_cv_pct: 'Step Length Variability (CV)',
+  step_length_lr_diff_pct: 'L/R Step Length Diff', trunk_sway_rms_mm: 'Trunk Sway (RMS)',
+  l_knee_angle_mean: 'Left Knee Angle (Mean)', r_knee_angle_mean: 'Right Knee Angle (Mean)',
+  l_hip_angle_mean: 'Left Hip Angle (Mean)', r_hip_angle_mean: 'Right Hip Angle (Mean)',
+  l_elbow_angle_mean: 'Left Elbow Angle (Mean)', r_elbow_angle_mean: 'Right Elbow Angle (Mean)',
+  l_knee_angular_velocity_rms: 'Left Knee Angular Velocity (RMS)',
+  r_knee_angular_velocity_rms: 'Right Knee Angular Velocity (RMS)',
+  l_hip_angular_velocity_rms: 'Left Hip Angular Velocity (RMS)',
+  r_hip_angular_velocity_rms: 'Right Hip Angular Velocity (RMS)',
+  l_elbow_angular_velocity_rms: 'Left Elbow Angular Velocity (RMS)',
+  r_elbow_angular_velocity_rms: 'Right Elbow Angular Velocity (RMS)',
+  l_knee_stance_mean: 'Left Knee Angle — Stance', r_knee_stance_mean: 'Right Knee Angle — Stance',
+  l_knee_swing_mean: 'Left Knee Angle — Swing', r_knee_swing_mean: 'Right Knee Angle — Swing',
+  l_knee_swing_min_angle: 'Left Knee Peak Flexion (Swing)', r_knee_swing_min_angle: 'Right Knee Peak Flexion (Swing)',
+  l_hip_stance_mean: 'Left Hip Angle — Stance', r_hip_stance_mean: 'Right Hip Angle — Stance',
+  l_hip_swing_mean: 'Left Hip Angle — Swing', r_hip_swing_mean: 'Right Hip Angle — Swing',
+}
+
+const ANGLE_LABELS_EN: Record<string, string> = {
+  'L Knee': 'Left Knee', 'R Knee': 'Right Knee', 'L Hip': 'Left Hip', 'R Hip': 'Right Hip',
+  'L Ankle': 'Left Ankle', 'R Ankle': 'Right Ankle', 'L Elbow': 'Left Elbow', 'R Elbow': 'Right Elbow',
+}
+
+const GAIT_PHASE_LABELS_EN: Record<string, string> = {
+  swing: 'Swing', terminal_stance: 'Terminal Stance', loading_response: 'Loading Response',
+  mid_stance: 'Mid Stance', stance: 'Stance', double_support: 'Double Support',
+  l_swing: 'Left Swing', r_swing: 'Right Swing', double_float: 'Uncertain',
+}
+
+const METRIC_GROUP_TITLES_EN: Record<string, string> = {
+  'Zamansal-Mekânsal': 'Spatiotemporal', 'Yürüyüş Fazları': 'Gait Phases',
+  'Simetri & Değişkenlik': 'Symmetry & Variability', 'Eklem Kinematiği': 'Joint Kinematics',
+  'Kalite': 'Quality', 'Diğer': 'Other',
+}
+
 interface MetricInfo { label: string; value: string; unit: string }
-function processMetric(key: string, raw: number): MetricInfo {
+function processMetric(key: string, raw: number, lang: 'tr' | 'en' = 'tr'): MetricInfo {
   const k = key.toLowerCase()
-  const label = METRIC_LABELS[key] ?? key.replace(/_/g, ' ')
+  const label = (lang === 'en' ? METRIC_LABELS_EN[key] : undefined) ?? METRIC_LABELS[key] ?? key.replace(/_/g, ' ')
   // Normalized (dimensionless ratio) — check before length/speed
   if (k.includes('normalized'))           return { label, value: raw.toFixed(3), unit: '' }
   // HRNet-2D yürüyüş metrikleri
@@ -339,9 +390,26 @@ interface AnglePanelHandle { update: (f: AnalysisFrame, frameIdx: number) => voi
 
 interface AnomalyMoment { joint: string; frameIdx: number; t: number; value: number; deviation: number }
 
+// Açı kartı mini eğrisi — tüm videonun o eklem serisi (statik, 0-200° bandı, artıklar kırpık).
+function Sparkline({ values }: { values: number[] }) {
+  const clean = values.map(v => (v == null || isNaN(v) || v <= 0 || v >= 350 ? null : Math.min(v, 200)))
+  if (clean.filter(v => v != null).length < 8) return null
+  const W = 100, H = 22
+  const pts: string[] = []
+  clean.forEach((v, i) => {
+    if (v == null) return
+    pts.push(`${(i / (clean.length - 1)) * W},${H - (v / 200) * H}`)
+  })
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-5 mt-1 opacity-60" preserveAspectRatio="none">
+      <polyline points={pts.join(' ')} fill="none" stroke="currentColor" strokeWidth="1.2" className="text-slate-400" />
+    </svg>
+  )
+}
+
 function AnglePanel({
   initialFrame, summary, frameCount,
-  panelRef, feedback, anomalyMoments, onJumpToFrame,
+  panelRef, feedback, anomalyMoments, onJumpToFrame, timeseries,
 }: {
   initialFrame: AnalysisFrame
   summary: Record<string, number>
@@ -350,6 +418,7 @@ function AnglePanel({
   feedback?: FeedbackItem[]
   anomalyMoments?: AnomalyMoment[]
   onJumpToFrame?: (n: number) => void
+  timeseries?: Record<string, number[]>
 }) {
   const [tab, setTab] = useState<PanelTab>('angles')
   const angleRefs = useRef<Record<string, HTMLSpanElement | null>>({})
@@ -379,10 +448,11 @@ function AnglePanel({
     }
   }, [panelRef])
 
+  const { lang, t } = useLang()
   const tabs: { id: PanelTab; label: string; disabled?: boolean }[] = [
-    { id: 'angles',   label: 'Açılar' },
-    { id: 'metrics',  label: 'Metrikler' },
-    { id: 'feedback', label: 'Geri Bildirim', disabled: !feedback?.length },
+    { id: 'angles',   label: t('analysis.tabs.angles') },
+    { id: 'metrics',  label: t('analysis.tabs.metrics') },
+    { id: 'feedback', label: t('analysis.tabs.feedback'), disabled: !feedback?.length },
   ]
 
   return (
@@ -390,7 +460,7 @@ function AnglePanel({
 
       {/* Frame counter */}
       <div className="text-xs text-slate-500 flex justify-between px-4 pt-3 pb-2 shrink-0">
-        <span>Frame <span ref={frameNumRef} className="text-slate-300 font-mono">1</span> / {frameCount}</span>
+        <span>{t('analysis.frame')} <span ref={frameNumRef} className="text-slate-300 font-mono">1</span> / {frameCount}</span>
         <span ref={timeRef} className="font-mono text-slate-300">t = {initialFrame.t.toFixed(2)}s</span>
       </div>
 
@@ -429,13 +499,14 @@ function AnglePanel({
                   ref={el => { angleDivRefs.current[key] = el }}
                   className={`rounded-lg px-3 py-2 ${bg}`}
                 >
-                  <div className="text-xs text-slate-500">{ANGLE_LABELS[key] ?? key}</div>
+                  <div className="text-xs text-slate-500">{(lang === 'en' ? ANGLE_LABELS_EN[key] : undefined) ?? ANGLE_LABELS[key] ?? key}</div>
                   <span
                     ref={el => { angleRefs.current[key] = el }}
                     className={`text-sm font-bold font-mono ${text}`}
                   >
                     {val.toFixed(1)}°
                   </span>
+                  {timeseries?.[key] && <Sparkline values={timeseries[key]} />}
                 </div>
               )
             })}
@@ -448,11 +519,11 @@ function AnglePanel({
             {groupMetrics(summary).map(g => (
               <div key={g.title} className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
                 <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
-                  {g.title}
+                  {lang === 'en' ? (METRIC_GROUP_TITLES_EN[g.title] ?? g.title) : g.title}
                 </div>
                 <div className="px-3 py-1">
                   {g.items.map(([key, val]) => {
-                    const m = processMetric(key, val)
+                    const m = processMetric(key, val, lang)
                     return (
                       <div key={key} className="flex justify-between items-center gap-2 py-1 border-b border-slate-800/60 last:border-0">
                         <span className="text-xs text-slate-400">{m.label}</span>
@@ -472,7 +543,7 @@ function AnglePanel({
             {anomalyMoments && anomalyMoments.length > 0 && (
               <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
                 <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
-                  En Belirgin Sapma Anları
+                  {t('analysis.deviations')}
                 </div>
                 <div className="px-1 py-1">
                   {anomalyMoments.map((m, i) => (
@@ -483,7 +554,7 @@ function AnglePanel({
                       className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/70 transition-colors text-left"
                       title="O ana git"
                     >
-                      <span className="text-xs text-slate-300">{ANGLE_LABELS[m.joint] ?? m.joint}</span>
+                      <span className="text-xs text-slate-300">{(lang === 'en' ? ANGLE_LABELS_EN[m.joint] : undefined) ?? ANGLE_LABELS[m.joint] ?? m.joint}</span>
                       <span className="text-[11px] font-mono text-slate-400">
                         t={m.t.toFixed(1)}s · {m.value.toFixed(0)}° <span className="text-red-400">({m.deviation > 0 ? '+' : ''}{m.deviation.toFixed(0)}°)</span>
                       </span>
@@ -501,12 +572,37 @@ function AnglePanel({
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
+export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewerProps) {
+  const { lang, t } = useLang()
+  const phaseLabel = (ph: string) =>
+    (lang === 'en' ? GAIT_PHASE_LABELS_EN[ph] : undefined) ?? GAIT_PHASE_LABELS[ph]?.label ?? ph
   const [data, setData] = useState<AnalysisData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [frameIdx, setFrameIdx] = useState(0)     // only used for scrubbing + graph
   const [playing, setPlaying] = useState(false)
+  // Doktor değerlendirme notu — doktor yazar/günceller, hasta okur (bkz. types.ts doctor_note).
+  const [note, setNote] = useState(video.doctor_note ?? '')
+  const [noteSaving, setNoteSaving] = useState(false)
+  const [noteSavedAt, setNoteSavedAt] = useState<string | null>(video.doctor_note_at ?? null)
+  const saveNote = async () => {
+    if (!supabase) return
+    setNoteSaving(true)
+    const { error: err } = await supabase.from('videos').update({
+      doctor_note: note.trim() || null,
+      doctor_note_by: username,
+      doctor_note_at: new Date().toISOString(),
+    }).eq('id', video.id)
+    setNoteSaving(false)
+    if (err) {
+      alert(`Not kaydedilemedi: ${err.message}`)
+    } else {
+      setNoteSavedAt(new Date().toISOString())
+      // liste görünümündeki kayıt da tazelensin diye obje üzerinde güncelle (referans paylaşımlı)
+      video.doctor_note = note.trim() || null
+      video.doctor_note_by = username
+    }
+  }
   // Annotate'li video görünümü: 'both' = video + iskelet yan yana (annotated_url varsa
   // varsayılan), 'skeleton' = sadece 3D iskelet. Oynatma sırasında video ana saat kaynağıdır
   // (rAF ile currentTime okunup iskelet o kareye senkronlanır) — iki ayrı saat kaymaz.
@@ -765,7 +861,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
   // kaldı ya da eski kayıt — rozet gizlenir). Eskiden hrnet_stgcn tamamen gizliyordu;
   // compute_gait_events eklendiğinden beri HRNet kayıtları da faz üretiyor.
   const phaseInfo = frame && frame.gait_phase !== 'n/a'
-    ? (GAIT_PHASE_LABELS[frame.gait_phase] ?? { label: frame.gait_phase, color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' })
+    ? { label: phaseLabel(frame.gait_phase), color: GAIT_PHASE_LABELS[frame.gait_phase]?.color ?? 'bg-slate-500/20 text-slate-300 border-slate-500/40' }
     : null
   const classification = data?.classification
 
@@ -802,7 +898,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
           {data && (
             <button type="button" onClick={() => generateReport(data, video.file_name)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-colors">
-              <FileText className="w-3.5 h-3.5" /> Rapor
+              <FileText className="w-3.5 h-3.5" /> {t('analysis.report')}
             </button>
           )}
           <button type="button" onClick={onClose} title="Kapat"
@@ -814,7 +910,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center gap-3 text-slate-400">
-          <Loader2 className="w-6 h-6 animate-spin" /><span>Analiz yükleniyor...</span>
+          <Loader2 className="w-6 h-6 animate-spin" /><span>{t('analysis.loading')}</span>
         </div>
       ) : error ? (
         <div className="flex-1 flex items-center justify-center gap-3 text-red-400">
@@ -850,13 +946,42 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                     className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
                     title="Geri Bildirim sekmesini aç"
                   >
-                    ⚠ {nWarn} uyarı
+                    ⚠ {nWarn} {t('analysis.warnings')}
                   </button>
                 )
               }
               return chips
             })()}
           </div>
+          {/* Doktor değerlendirmesi — doktor: düzenlenebilir, hasta: salt-okunur (varsa) */}
+          {(role === 'doctor' || video.doctor_note) && (
+            <div className="shrink-0 px-4 py-2 border-b border-slate-800/70 bg-slate-900/30">
+              {role === 'doctor' ? (
+                <div className="flex items-start gap-2">
+                  <textarea
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                    placeholder="Doktor değerlendirme notu — hasta bu notu görebilir…"
+                    rows={note.length > 120 ? 3 : 1}
+                    className="flex-1 text-xs bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-y"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveNote()}
+                    disabled={noteSaving || note === (video.doctor_note ?? '')}
+                    className="shrink-0 text-xs px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white transition-colors"
+                  >
+                    {noteSaving ? 'Kaydediliyor…' : noteSavedAt && note === (video.doctor_note ?? '') ? 'Kaydedildi ✓' : 'Kaydet'}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-xs text-slate-300">
+                  <span className="font-semibold text-emerald-400">Doktor Değerlendirmesi{video.doctor_note_by ? ` (${video.doctor_note_by})` : ''}: </span>
+                  {video.doctor_note}
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex flex-col md:flex-row flex-1 min-h-0">
             <div className="flex-1 min-w-0 relative flex flex-col sm:flex-row">
               {viewMode === 'both' && video.annotated_url && (
@@ -885,7 +1010,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               </div>
               {video.annotated_url && (
                 <div className="absolute top-2 left-2 flex gap-1 z-10">
-                  {([['both', 'Video + İskelet'], ['skeleton', 'Sadece İskelet']] as const).map(([m, label]) => (
+                  {([['both', t('analysis.view.both')], ['skeleton', t('analysis.view.skeleton')]] as const).map(([m, label]) => (
                     <button
                       key={m}
                       type="button"
@@ -909,6 +1034,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               panelRef={anglePanelRef}
               feedback={data.feedback}
               anomalyMoments={anomalyMoments}
+              timeseries={data.timeseries}
               onJumpToFrame={n => {
                 setPlaying(false)
                 frameIdxRef.current = n
@@ -925,7 +1051,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               alt alta bağımsız çubuklar dağınık görünüyordu). */}
           <div className="shrink-0 border-t border-slate-800 px-4 py-2 flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none">Zaman</span>
+              <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none">{t('analysis.timeline.time')}</span>
               <input
                 ref={scrubberRef}
                 type="range"
@@ -988,12 +1114,12 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
             {/* Gait phase distribution bar */}
             {phaseDist.length > 0 && (
               <div className="flex items-center gap-2">
-                <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none">Faz</span>
+                <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none">{t('analysis.timeline.phase')}</span>
                 <div className="flex h-2.5 rounded overflow-hidden w-full">
                   {phaseDist.map(({ phase, pct }) => (
                     <div
                       key={phase}
-                      title={`${GAIT_PHASE_LABELS[phase]?.label ?? phase}: ${pct.toFixed(1)}%`}
+                      title={`${phaseLabel(phase)}: ${pct.toFixed(1)}%`}
                       className={`phase-bar-fill ${PHASE_BAR_CLASS[phase] ?? 'bg-slate-500'}`}
                       style={{ '--phase-w': `${pct}%` } as React.CSSProperties}
                     />
@@ -1003,7 +1129,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                   {phaseDist.slice(0, 3).map(({ phase, pct }) => (
                     <span key={phase} className="flex items-center gap-1">
                       <span className={`inline-block w-2 h-2 rounded-sm ${PHASE_BAR_CLASS[phase] ?? 'bg-slate-500'}`} />
-                      {GAIT_PHASE_LABELS[phase]?.label ?? phase} <span className="text-slate-500">%{pct.toFixed(0)}</span>
+                      {phaseLabel(phase)} <span className="text-slate-500">%{pct.toFixed(0)}</span>
                     </span>
                   ))}
                 </span>

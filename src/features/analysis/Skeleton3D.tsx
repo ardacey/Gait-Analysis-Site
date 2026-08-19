@@ -174,9 +174,17 @@ export const Skeleton3D = forwardRef<Skeleton3DHandle, Skeleton3DProps>(
       }
 
       const boneMeshes: THREE.Mesh[] = []
+      // Klinik konvansiyon: sol uzuvlar mavi, sağ uzuvlar kırmızı, orta hat gri —
+      // kenarın İKİ ucu da aynı taraftaysa o tarafın rengi, aksi halde nötr.
       for (let i = 0; i < edgesRef.current.length; i++) {
+        const [a, b] = edgesRef.current[i]
+        const na = jointNamesRef.current[a] ?? ''
+        const nb = jointNamesRef.current[b] ?? ''
+        const isL = (n: string) => /^L[A-Z]/.test(n)
+        const isR = (n: string) => /^R[A-Z]/.test(n)
+        const color = (isL(na) && isL(nb)) ? 0x3b82f6 : (isR(na) && isR(nb)) ? 0xef4444 : 0x64748b
         const cyl = new THREE.CylinderGeometry(0.015, 0.015, 1, 6)
-        const mat = new THREE.MeshStandardMaterial({ color: 0x475569 })
+        const mat = new THREE.MeshStandardMaterial({ color })
         const mesh = new THREE.Mesh(cyl, mat)
         scene.add(mesh)
         boneMeshes.push(mesh)

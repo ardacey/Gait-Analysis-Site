@@ -3,6 +3,7 @@ import { Button } from '../../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card'
 import { Activity, User, Stethoscope, CheckCircle2, Lock } from 'lucide-react'
 import type { UserRole, AuthMode } from '../../types'
+import { LangToggle } from '../../lib/i18n'
 
 interface AuthScreenProps {
   authMode: AuthMode
@@ -33,6 +34,9 @@ export function AuthScreen({
       {/* Dekoratif arka plan lekeleri — dashboard'daki yükleme kartıyla aynı görsel dil */}
       <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-100/60 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -left-24 w-[28rem] h-[28rem] bg-indigo-100/50 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-4 right-4">
+        <LangToggle className="bg-white/80 border-slate-200 text-slate-500 hover:bg-white" />
+      </div>
       <Card className="w-full max-w-lg shadow-2xl border-0 relative">
         {/* Sekmeler */}
         <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-t-xl">
