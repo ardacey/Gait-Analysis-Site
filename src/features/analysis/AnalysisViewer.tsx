@@ -449,7 +449,9 @@ function AnglePanel({
   timeseries?: Record<string, number[]>
   explanation?: { joints: { name: string; delta: number }[]; n_windows: number }
 }) {
-  const [tab, setTab] = useState<PanelTab>('angles')
+  const [tab, setTab] = useState<PanelTab>(feedback?.length ? 'feedback' : 'angles')
+  // Metrik akordiyonu — ilk grup açık, gerisi katlı (30 satırlık duvar yerine)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const angleRefs = useRef<Record<string, HTMLSpanElement | null>>({})
   const angleDivRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const frameNumRef = useRef<HTMLSpanElement | null>(null)
@@ -469,7 +471,7 @@ function AnglePanel({
           const div = angleDivRefs.current[key]
           if (div) {
             const { bg, text } = getAngleColor(key, val)
-            div.className = `rounded-lg px-3 py-2 ${bg}`
+            div.className = `rounded-lg px-2.5 py-1.5 ${bg}`
             if (span) span.className = `text-sm font-bold font-mono ${text}`
           }
         }
@@ -479,9 +481,9 @@ function AnglePanel({
 
   const { lang, t } = useLang()
   const tabs: { id: PanelTab; label: string; disabled?: boolean }[] = [
+    { id: 'feedback', label: lang === 'en' ? 'Assessment' : 'Değerlendirme', disabled: !feedback?.length },
     { id: 'angles',   label: t('analysis.tabs.angles') },
     { id: 'metrics',  label: t('analysis.tabs.metrics') },
-    { id: 'feedback', label: t('analysis.tabs.feedback'), disabled: !feedback?.length },
   ]
 
   return (
@@ -526,7 +528,7 @@ function AnglePanel({
                 <div
                   key={key}
                   ref={el => { angleDivRefs.current[key] = el }}
-                  className={`rounded-lg px-3 py-2 ${bg}`}
+                  className={`rounded-lg px-2.5 py-1.5 ${bg}`}
                 >
                   <div className="text-xs text-slate-500">{(lang === 'en' ? ANGLE_LABELS_EN[key] : undefined) ?? ANGLE_LABELS[key] ?? key}</div>
                   <span
@@ -544,13 +546,20 @@ function AnglePanel({
 
         {/* METRİKLER */}
         {tab === 'metrics' && Object.keys(summary).length > 0 && (
-          <div className="flex flex-col gap-3">
-            {groupMetrics(summary).map(g => (
+          <div className="flex flex-col gap-2">
+            {groupMetrics(summary).map((g, gi) => (
               <div key={g.title} className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
-                  {lang === 'en' ? (METRIC_GROUP_TITLES_EN[g.title] ?? g.title) : g.title}
-                </div>
-                <div className="px-3 py-1">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroups(o => ({ ...o, [g.title]: !(o[g.title] ?? gi === 0) }))}
+                  className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-800/40 hover:bg-slate-800/70 transition-colors"
+                >
+                  <span>{lang === 'en' ? (METRIC_GROUP_TITLES_EN[g.title] ?? g.title) : g.title}
+                    <span className="ml-1.5 normal-case tracking-normal text-slate-600">({g.items.length})</span>
+                  </span>
+                  <span className="text-slate-600">{(openGroups[g.title] ?? gi === 0) ? '▲' : '▼'}</span>
+                </button>
+                <div className={`px-3 py-1 ${(openGroups[g.title] ?? gi === 0) ? '' : 'hidden'}`}>
                   {g.items.map(([key, val]) => {
                     const m = processMetric(key, val, lang)
                     return (
@@ -624,7 +633,7 @@ function AnglePanel({
                 </div>
               </div>
             )}
-            <GaitFeedback feedback={feedback} variant="dark" />
+            <GaitFeedback feedback={feedback} variant="dark" collapsibleGoods />
           </div>
         )}
       </div>

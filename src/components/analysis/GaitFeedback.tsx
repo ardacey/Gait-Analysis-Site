@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react'
+import { useLang } from '../../lib/i18n'
 
 export interface FeedbackItem {
   type: 'warning' | 'good' | 'info'
@@ -88,12 +90,17 @@ function FeedbackCard({ item, variant }: { item: FeedbackItem; variant: 'light' 
 interface GaitFeedbackProps {
   feedback: FeedbackItem[]
   variant?: 'light' | 'dark'
+  /** true: olumlu maddeler tek satırlık "✓ N kontrol normal" özetine katlanır (analiz ekranı
+   * paneli — uyarılar öne çıksın diye). false (varsayılan): eski düz liste (canlı mod). */
+  collapsibleGoods?: boolean
 }
 
-export function GaitFeedback({ feedback, variant = 'light' }: GaitFeedbackProps) {
+export function GaitFeedback({ feedback, variant = 'light', collapsibleGoods = false }: GaitFeedbackProps) {
+  const { lang } = useLang()
+  const [goodsOpen, setGoodsOpen] = useState(false)
   if (feedback.length === 0) {
     return (
-      <p className="text-xs text-slate-500 text-center py-4">Henüz analiz sonucu yok.</p>
+      <p className="text-xs text-slate-500 text-center py-4">{lang === 'en' ? 'No analysis results yet.' : 'Henüz analiz sonucu yok.'}</p>
     )
   }
 
@@ -108,7 +115,7 @@ export function GaitFeedback({ feedback, variant = 'light' }: GaitFeedbackProps)
     <div className="space-y-4">
       {warnings.length > 0 && (
         <section className="space-y-1.5">
-          <h3 className={headingCls}>Dikkat Edilmesi Gerekenler</h3>
+          <h3 className={headingCls}>{lang === 'en' ? 'Needs Attention' : 'Dikkat Edilmesi Gerekenler'}</h3>
           {warnings.map((item, i) => (
             <FeedbackCard key={i} item={item} variant={variant} />
           ))}
@@ -116,10 +123,35 @@ export function GaitFeedback({ feedback, variant = 'light' }: GaitFeedbackProps)
       )}
       {goods.length > 0 && (
         <section className="space-y-1.5">
-          <h3 className={headingCls}>İyi Giden Yönler</h3>
-          {goods.map((item, i) => (
-            <FeedbackCard key={i} item={item} variant={variant} />
-          ))}
+          {collapsibleGoods ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setGoodsOpen(o => !o)}
+                className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors ${
+                  variant === 'dark'
+                    ? 'bg-emerald-950/50 border border-emerald-800/50 text-emerald-300 hover:bg-emerald-950/80'
+                    : 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {lang === 'en' ? `${goods.length} checks within normal range` : `${goods.length} kontrol normal aralıkta`}
+                </span>
+                <span className="opacity-60">{goodsOpen ? '▲' : '▼'}</span>
+              </button>
+              {goodsOpen && goods.map((item, i) => (
+                <FeedbackCard key={i} item={item} variant={variant} />
+              ))}
+            </>
+          ) : (
+            <>
+              <h3 className={headingCls}>{lang === 'en' ? 'Going Well' : 'İyi Giden Yönler'}</h3>
+              {goods.map((item, i) => (
+                <FeedbackCard key={i} item={item} variant={variant} />
+              ))}
+            </>
+          )}
         </section>
       )}
     </div>
