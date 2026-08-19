@@ -3,7 +3,7 @@ import { Button } from '../../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card'
 import { Activity, User, Stethoscope, CheckCircle2, Lock } from 'lucide-react'
 import type { UserRole, AuthMode } from '../../types'
-import { LangToggle } from '../../lib/i18n'
+import { LangToggle, useLang } from '../../lib/i18n'
 
 interface AuthScreenProps {
   authMode: AuthMode
@@ -28,7 +28,9 @@ export function AuthScreen({
   doctorCode, setDoctorCode,
   handleAuth, authLoading
 }: AuthScreenProps) {
-  
+  const { lang } = useLang()
+  const L = (tr: string, en: string) => (lang === 'en' ? en : tr)
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-white to-blue-50 px-4 relative overflow-hidden">
       {/* Dekoratif arka plan lekeleri — dashboard'daki yükleme kartıyla aynı görsel dil */}
@@ -46,7 +48,7 @@ export function AuthScreen({
               authMode === 'login' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            Giriş Yap
+            {L('Giriş Yap', 'Sign In')}
           </button>
           <button
             onClick={() => { setAuthMode('register'); setDoctorCode(''); }}
@@ -54,7 +56,7 @@ export function AuthScreen({
               authMode === 'register' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            Kayıt Ol
+            {L('Kayıt Ol', 'Sign Up')}
           </button>
         </div>
 
@@ -64,12 +66,12 @@ export function AuthScreen({
           </div>
           <div>
             <CardTitle className="text-2xl font-bold text-slate-800">
-              {authMode === 'login' ? 'Tekrar Hoşgeldiniz' : 'Hesap Oluşturun'}
+              {authMode === 'login' ? L('Tekrar Hoşgeldiniz', 'Welcome Back') : L('Hesap Oluşturun', 'Create an Account')}
             </CardTitle>
             <CardDescription className="mt-2">
               {authMode === 'login' 
-                ? 'Gait Analysis platformuna giriş yapın.' 
-                : 'Doktor veya hasta olarak kayıt olun.'}
+                ? L('Gait Analysis platformuna giriş yapın.', 'Sign in to the Gait Analysis platform.') 
+                : L('Doktor veya hasta olarak kayıt olun.', 'Register as a doctor or a patient.')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -78,7 +80,7 @@ export function AuthScreen({
           <form onSubmit={handleAuth} className="space-y-6">
             <div className="space-y-3">
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Kim Olarak {authMode === 'login' ? 'Gireceksiniz?' : 'Kaydolacaksınız?'}
+                {authMode === 'login' ? L('Kim Olarak Gireceksiniz?', 'Sign In As') : L('Kim Olarak Kaydolacaksınız?', 'Register As')}
               </label>
               <div className="grid grid-cols-2 gap-4">
                 <div 
@@ -91,7 +93,7 @@ export function AuthScreen({
                 >
                   {role === 'patient' && <CheckCircle2 className="absolute top-2 right-2 w-4 h-4 text-blue-500" />}
                   <User className="w-8 h-8" />
-                  <span className="font-medium">Hasta</span>
+                  <span className="font-medium">{L('Hasta', 'Patient')}</span>
                 </div>
 
                 <div 
@@ -104,7 +106,7 @@ export function AuthScreen({
                 >
                   {role === 'doctor' && <CheckCircle2 className="absolute top-2 right-2 w-4 h-4 text-emerald-500" />}
                   <Stethoscope className="w-8 h-8" />
-                  <span className="font-medium">Doktor</span>
+                  <span className="font-medium">{L('Doktor', 'Doctor')}</span>
                 </div>
               </div>
             </div>
@@ -113,13 +115,13 @@ export function AuthScreen({
             {authMode === 'register' && role === 'doctor' && (
               <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
                 <label className="text-sm font-bold text-emerald-700 flex items-center gap-2">
-                  <Lock className="w-4 h-4"/> Doktor Kayıt Anahtarı
+                  <Lock className="w-4 h-4"/> {L('Doktor Kayıt Anahtarı', 'Doctor Registration Key')}
                 </label>
                 <input
                   type="password"
                   value={doctorCode}
                   onChange={(e) => setDoctorCode(e.target.value)}
-                  placeholder="Yönetici şifresini giriniz..."
+                  placeholder={L('Yönetici şifresini giriniz...', 'Enter the admin key…')}
                   className="flex h-12 w-full rounded-lg border-2 border-emerald-100 bg-emerald-50 px-3 text-sm focus:outline-none focus:border-emerald-500 transition-all"
                   required
                 />
@@ -127,13 +129,13 @@ export function AuthScreen({
             )}
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Kullanıcı Adı</label>
+              <label className="text-sm font-medium text-slate-700">{L('Kullanıcı Adı', 'Username')}</label>
               <div className="relative">
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder={role === 'patient' ? "Örn: ahmet123" : "Örn: dr_ayse"}
+                  placeholder={role === 'patient' ? L('Örn: ahmet123', 'e.g. john123') : L('Örn: dr_ayse', 'e.g. dr_jane')}
                   className="flex h-12 w-full pl-10 rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                   required
                 />
@@ -142,13 +144,13 @@ export function AuthScreen({
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Şifre</label>
+              <label className="text-sm font-medium text-slate-700">{L('Şifre', 'Password')}</label>
               <div className="relative">
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Şifrenizi giriniz"
+                  placeholder={L('Şifrenizi giriniz', 'Enter your password')}
                   className="flex h-12 w-full pl-10 rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                   required
                 />
@@ -163,14 +165,14 @@ export function AuthScreen({
                 role === 'doctor' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
-              {authLoading ? 'İşlem yapılıyor...' : (authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol')}
+              {authLoading ? L('İşlem yapılıyor...', 'Working…') : (authMode === 'login' ? L('Giriş Yap', 'Sign In') : L('Kayıt Ol', 'Sign Up'))}
             </Button>
           </form>
         </CardContent>
       </Card>
       <p className="relative mt-6 text-xs text-slate-400 text-center max-w-sm">
-        Video tabanlı yürüyüş analizi — yüklenen videolar yalnızca analiz amacıyla işlenir,
-        canlı pratik görüntüleri cihazınızdan dışarı çıkmaz.
+        {L('Video tabanlı yürüyüş analizi — yüklenen videolar yalnızca analiz amacıyla işlenir, canlı pratik görüntüleri cihazınızdan dışarı çıkmaz.',
+           'Video-based gait analysis — uploaded videos are processed for analysis only; live practice footage never leaves your device.')}
       </p>
     </div>
   )

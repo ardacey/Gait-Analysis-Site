@@ -25,19 +25,16 @@ interface DashboardProps {
   onOpenLive: () => void
 }
 
-const METHOD_LABELS: Record<AnalysisMethod, { short: string; badge: string }> = {
-  metrabs:      { short: '3D · MeTRAbs',       badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  hrnet_stgcn:  { short: '2D · HRNet+ST-GCN',  badge: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' },
-}
-
 // ST-GCN sonuç rozeti — kartta durumun yanında ASIL bilgiyi (sınıflandırma sonucu) gösterir.
 // İki etiket dönemi (bkz. types.ts StgcnLabel): normal/abnormal (yürüyüş) ve
 // correct/incorrect (eski egzersiz kayıtları).
 function ResultBadge({ label, confidence }: { label: string | null; confidence: number | null }) {
+  const { lang } = useLang()
   if (!label) return null
   const positive = label === 'normal' || label === 'correct'
-  const text = label === 'normal' ? 'Normal' : label === 'abnormal' ? 'Anormal'
-    : label === 'correct' ? 'Doğru İcra' : 'Hatalı İcra'
+  const text = lang === 'en'
+    ? (label === 'normal' ? 'Normal' : label === 'abnormal' ? 'Abnormal' : label === 'correct' ? 'Correct Form' : 'Incorrect Form')
+    : (label === 'normal' ? 'Normal' : label === 'abnormal' ? 'Anormal' : label === 'correct' ? 'Doğru İcra' : 'Hatalı İcra')
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border ${
       positive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
@@ -48,25 +45,27 @@ function ResultBadge({ label, confidence }: { label: string | null; confidence: 
 }
 
 function StatusBadge({ jobStatus }: { jobStatus: string | null }) {
+  const { lang } = useLang()
+  const L = (tr: string, en: string) => (lang === 'en' ? en : tr)
   if (!jobStatus) return null
   if (jobStatus === 'queued') return (
     <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 border border-amber-200">
-      <Clock className="w-3 h-3" /> Kuyrukta
+      <Clock className="w-3 h-3" /> {L('Kuyrukta', 'Queued')}
     </span>
   )
   if (jobStatus === 'processing') return (
     <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">
-      <Loader2 className="w-3 h-3 animate-spin" /> İşleniyor
+      <Loader2 className="w-3 h-3 animate-spin" /> {L('İşleniyor', 'Processing')}
     </span>
   )
   if (jobStatus === 'done') return (
     <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-      <CheckCircle2 className="w-3 h-3" /> Tamamlandı
+      <CheckCircle2 className="w-3 h-3" /> {L('Tamamlandı', 'Completed')}
     </span>
   )
   if (jobStatus === 'error') return (
     <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-red-50 text-red-700 border border-red-200">
-      <XCircle className="w-3 h-3" /> Hata
+      <XCircle className="w-3 h-3" /> {L('Hata', 'Error')}
     </span>
   )
   return null
@@ -88,7 +87,8 @@ export function Dashboard({
   setActiveVideo, confirmDelete, openAnalysis, onOpenLive,
 }: DashboardProps) {
 
-  const { t } = useLang()
+  const { t, lang } = useLang()
+  const L = (tr: string, en: string) => (lang === 'en' ? en : tr)
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   // Tek aktif yöntem (bkz. yöntem seçicinin kaldırıldığı yerdeki yorum) — setMethod bilinçli yok.
@@ -188,9 +188,6 @@ export function Dashboard({
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <User className="w-3 h-3 text-slate-400" />
                             <span className="text-xs text-slate-500">{video.user_name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${METHOD_LABELS[video.analysis_method]?.badge ?? METHOD_LABELS.metrabs.badge}`}>
-                              {METHOD_LABELS[video.analysis_method]?.short ?? METHOD_LABELS.metrabs.short}
-                            </span>
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -210,7 +207,7 @@ export function Dashboard({
                           onClick={() => video.file_url && setActiveVideo(video.file_url)}
                           className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                         >
-                          <Play className="w-3 h-3" /> İncele
+                          <Play className="w-3 h-3" /> {L('İncele', 'View')}
                         </button>
 
                         {video.job_status === 'done' && (
@@ -219,13 +216,13 @@ export function Dashboard({
                             onClick={() => openAnalysis(video)}
                             className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                           >
-                            <BarChart2 className="w-3 h-3" /> Analiz
+                            <BarChart2 className="w-3 h-3" /> {L('Analiz', 'Analysis')}
                           </button>
                         )}
 
                         {video.job_status && video.job_status !== 'done' && (
                           <div className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-slate-50 text-slate-400 border border-slate-100 cursor-default">
-                            <BarChart2 className="w-3 h-3" /> Analiz
+                            <BarChart2 className="w-3 h-3" /> {L('Analiz', 'Analysis')}
                           </div>
                         )}
 
@@ -233,7 +230,7 @@ export function Dashboard({
                           type="button"
                           onClick={() => confirmDelete(video)}
                           className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                          title="Sil"
+                          title={L('Sil', 'Delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -246,7 +243,7 @@ export function Dashboard({
                           download
                           className="flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
                         >
-                          <Download className="w-3 h-3" /> CSV İndir
+                          <Download className="w-3 h-3" /> {L('CSV İndir', 'Download CSV')}
                         </a>
                       )}
                     </div>
@@ -272,14 +269,14 @@ export function Dashboard({
               <User className="w-3.5 h-3.5 text-slate-500" />
               <span className="text-sm font-medium text-slate-700">{username}</span>
               <span className="text-xs text-slate-400">·</span>
-              <span className="text-xs text-slate-500">{isPatient ? 'Hasta' : 'Doktor'}</span>
+              <span className="text-xs text-slate-500">{isPatient ? L('Hasta', 'Patient') : L('Doktor', 'Doctor')}</span>
             </div>
             {/* Canlı Pratik iki role de açık (2026-08-19): doktor muayene sırasında hastayı
                 webcam'den canlı izleyebilsin */}
             <button
               type="button"
               onClick={onOpenLive}
-              title="Canlı Pratik (Beta)"
+              title={L('Canlı Pratik (Beta)', 'Live Practice (Beta)')}
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
             >
               <Camera className="w-3.5 h-3.5" /> {t('dash.livePractice')}
@@ -289,7 +286,7 @@ export function Dashboard({
               type="button"
               onClick={onLogout}
               className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-              title="Çıkış"
+              title={L('Çıkış', 'Log out')}
             >
               <LogOut className="w-4 h-4" />
 
@@ -348,15 +345,15 @@ export function Dashboard({
               {/* Left: text */}
               <div className="flex-1 text-center sm:text-left">
                 <p className="text-blue-200 text-xs font-semibold uppercase tracking-widest mb-2">
-                  Yürüyüş Analizi
+                  {L('Yürüyüş Analizi', 'Gait Analysis')}
                 </p>
                 <h2 className="text-2xl font-bold text-white mb-2">
-                  {isDragging ? 'Dosyayı bırakın' : t('dash.newAnalysis')}
+                  {isDragging ? L('Dosyayı bırakın', 'Drop the file') : t('dash.newAnalysis')}
                 </h2>
                 <p className="text-blue-200/80 text-sm max-w-sm leading-relaxed">
                   {isDragging
-                    ? 'Video dosyasını buraya bırakın, hemen yüklemeye başlayacağız.'
-                    : 'Video dosyanızı sürükleyip bırakın ya da tıklayarak seçin. Doktorunuz en kısa sürede sonuçlarınızı inceleyecektir.'}
+                    ? L('Video dosyasını buraya bırakın, hemen yüklemeye başlayacağız.', 'Drop the video file here to start uploading.')
+                    : L('Video dosyanızı sürükleyip bırakın ya da tıklayarak seçin. Doktorunuz en kısa sürede sonuçlarınızı inceleyecektir.', 'Drag and drop your video or click to select. Your doctor will review the results shortly.')}
                 </p>
               </div>
 
@@ -372,7 +369,7 @@ export function Dashboard({
                   : <Upload className={`w-8 h-8 text-white transition-transform duration-200 ${isDragging ? 'scale-125' : ''}`} />
                 }
                 <span className="text-xs text-blue-100 font-medium text-center leading-tight">
-                  {isUploading ? (status || 'Yükleniyor…') : isDragging ? 'Bırakın' : 'Tıkla veya\nSürükle'}
+                  {isUploading ? (status || L('Yükleniyor…', 'Uploading…')) : isDragging ? L('Bırakın', 'Drop') : L('Tıkla veya\nSürükle', 'Click or\nDrag')}
                 </span>
               </div>
             </div>
@@ -408,7 +405,7 @@ export function Dashboard({
             {videos.length > 3 && (
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1">
-                  {([['all', 'Tümü'], ['done', 'Tamamlandı'], ['processing', 'İşleniyor'], ['queued', 'Kuyrukta'], ['error', 'Hata']] as const).map(([k, label]) => (
+                  {([['all', L('Tümü', 'All')], ['done', L('Tamamlandı', 'Completed')], ['processing', L('İşleniyor', 'Processing')], ['queued', L('Kuyrukta', 'Queued')], ['error', L('Hata', 'Error')]] as const).map(([k, label]) => (
                     <button
                       key={k}
                       type="button"
@@ -427,7 +424,7 @@ export function Dashboard({
                   type="search"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder={isPatient ? 'Dosya ara…' : 'Hasta/dosya ara…'}
+                  placeholder={isPatient ? L('Dosya ara…', 'Search files…') : L('Hasta/dosya ara…', 'Search patient/file…')}
                   className="text-xs px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200 w-40"
                 />
                 <select
@@ -436,10 +433,10 @@ export function Dashboard({
                   aria-label="Sıralama"
                   className="text-xs px-2.5 py-1.5 rounded-full border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
-                  <option value="newest">Yeni → Eski</option>
-                  <option value="oldest">Eski → Yeni</option>
-                  <option value="name">Ada göre</option>
-                  <option value="status">Duruma göre</option>
+                  <option value="newest">{L('Yeni → Eski', 'Newest first')}</option>
+                  <option value="oldest">{L('Eski → Yeni', 'Oldest first')}</option>
+                  <option value="name">{L('Ada göre', 'By name')}</option>
+                  <option value="status">{L('Duruma göre', 'By status')}</option>
                 </select>
               </div>
             )}
@@ -463,11 +460,11 @@ export function Dashboard({
               <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                 <Film className="w-7 h-7 text-slate-300" />
               </div>
-              <p className="font-semibold text-slate-700">{videos.length === 0 ? 'Henüz video yok' : 'Filtreyle eşleşen video yok'}</p>
+              <p className="font-semibold text-slate-700">{videos.length === 0 ? L('Henüz video yok', 'No videos yet') : L('Filtreyle eşleşen video yok', 'No videos match the filter')}</p>
               <p className="text-sm text-slate-400 mt-1">
                 {videos.length > 0
-                  ? 'Filtreyi veya aramayı temizleyin.'
-                  : isPatient ? 'Yeni analiz başlatmak için yukarıya video yükleyin.' : 'Hasta videoları burada görünecek.'}
+                  ? L('Filtreyi veya aramayı temizleyin.', 'Clear the filter or search.')
+                  : isPatient ? L('Yeni analiz başlatmak için yukarıya video yükleyin.', 'Upload a video above to start a new analysis.') : L('Hasta videoları burada görünecek.', 'Patient videos will appear here.')}
               </p>
             </div>
           ) : groupedByPatient ? (

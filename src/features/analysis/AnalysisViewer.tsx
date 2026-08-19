@@ -910,6 +910,15 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
   // 'correct' ve 'normal' olumlu (yeşil) sınıf.
   const isPositiveLabel = (l: string) => l === 'correct' || l === 'normal'
   const labelText = (l: string, short = false) => {
+    if (lang === 'en') {
+      switch (l) {
+        case 'correct': return short ? 'Correct' : 'Correct Form'
+        case 'incorrect': return short ? 'Incorrect' : 'Incorrect Form'
+        case 'normal': return short ? 'Normal' : 'Normal Gait'
+        case 'abnormal': return short ? 'Abnormal' : 'Abnormal Gait'
+        default: return l
+      }
+    }
     switch (l) {
       case 'correct': return short ? 'Doğru' : 'Doğru İcra'
       case 'incorrect': return short ? 'Hatalı' : 'Hatalı İcra'
@@ -941,7 +950,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
           )}
           {classification && (
             <span
-              title={`ST-GCN: %${(classification.confidence * 100).toFixed(0)} güvenle ${labelText(classification.label)}`}
+              title={lang === 'en' ? `ST-GCN: ${labelText(classification.label)} with ${(classification.confidence * 100).toFixed(0)}% confidence` : `ST-GCN: %${(classification.confidence * 100).toFixed(0)} güvenle ${labelText(classification.label)}`}
               className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${
                 isPositiveLabel(classification.label)
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
@@ -991,12 +1000,12 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
                 </span>
               )
               const chips: React.ReactNode[] = []
-              if (sm.walking_speed != null) chips.push(chip('Hız', `${(sm.walking_speed / 1000).toFixed(2)} m/s`))
-              if (sm.cadence != null) chips.push(chip('Kadans', `${sm.cadence.toFixed(0)} adım/dk`))
-              if (sm.stride_length_mean != null) chips.push(chip('Adım', `${(sm.stride_length_mean / 1000).toFixed(2)} m`))
-              if (sm.step_time_lr_diff_pct != null) chips.push(chip('Sol/Sağ Fark', `%${sm.step_time_lr_diff_pct.toFixed(0)}`))
-              else if (sm.knee_rom_lr_diff != null) chips.push(chip('Diz Simetri', `${sm.knee_rom_lr_diff.toFixed(1)}°`))
-              if (sm.valid_frame_ratio != null) chips.push(chip('Geçerli Kare', `%${(sm.valid_frame_ratio * 100).toFixed(0)}`))
+              if (sm.walking_speed != null) chips.push(chip(lang === 'en' ? 'Speed' : 'Hız', `${(sm.walking_speed / 1000).toFixed(2)} m/s`))
+              if (sm.cadence != null) chips.push(chip(lang === 'en' ? 'Cadence' : 'Kadans', `${sm.cadence.toFixed(0)} ${lang === 'en' ? 'steps/min' : 'adım/dk'}`))
+              if (sm.stride_length_mean != null) chips.push(chip(lang === 'en' ? 'Step' : 'Adım', `${(sm.stride_length_mean / 1000).toFixed(2)} m`))
+              if (sm.step_time_lr_diff_pct != null) chips.push(chip(lang === 'en' ? 'L/R Diff' : 'Sol/Sağ Fark', `%${sm.step_time_lr_diff_pct.toFixed(0)}`))
+              else if (sm.knee_rom_lr_diff != null) chips.push(chip(lang === 'en' ? 'Knee Symmetry' : 'Diz Simetri', `${sm.knee_rom_lr_diff.toFixed(1)}°`))
+              if (sm.valid_frame_ratio != null) chips.push(chip(lang === 'en' ? 'Valid Frames' : 'Geçerli Kare', `%${(sm.valid_frame_ratio * 100).toFixed(0)}`))
               const nWarn = (data.feedback ?? []).filter(f => f.type === 'warning').length
               if (nWarn > 0) {
                 chips.push(
@@ -1022,7 +1031,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
                   <textarea
                     value={note}
                     onChange={e => setNote(e.target.value)}
-                    placeholder="Doktor değerlendirme notu — hasta bu notu görebilir…"
+                    placeholder={lang === 'en' ? 'Doctor assessment note — visible to the patient…' : 'Doktor değerlendirme notu — hasta bu notu görebilir…'}
                     rows={note.length > 120 ? 3 : 1}
                     className="flex-1 text-xs bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-y"
                   />
@@ -1032,12 +1041,12 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
                     disabled={noteSaving || note === (video.doctor_note ?? '')}
                     className="shrink-0 text-xs px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white transition-colors"
                   >
-                    {noteSaving ? 'Kaydediliyor…' : noteSavedAt && note === (video.doctor_note ?? '') ? 'Kaydedildi ✓' : 'Kaydet'}
+                    {noteSaving ? (lang === 'en' ? 'Saving…' : 'Kaydediliyor…') : noteSavedAt && note === (video.doctor_note ?? '') ? (lang === 'en' ? 'Saved ✓' : 'Kaydedildi ✓') : (lang === 'en' ? 'Save' : 'Kaydet')}
                   </button>
                 </div>
               ) : (
                 <div className="text-xs text-slate-300">
-                  <span className="font-semibold text-emerald-400">Doktor Değerlendirmesi{video.doctor_note_by ? ` (${video.doctor_note_by})` : ''}: </span>
+                  <span className="font-semibold text-emerald-400">{lang === 'en' ? 'Doctor Assessment' : 'Doktor Değerlendirmesi'}{video.doctor_note_by ? ` (${video.doctor_note_by})` : ''}: </span>
                   {video.doctor_note}
                 </div>
               )}
@@ -1117,8 +1126,8 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
               <input
                 ref={scrubberRef}
                 type="range"
-                title="Frame seç"
-                aria-label="Frame seç"
+                title={lang === 'en' ? 'Select frame' : 'Frame seç'}
+                aria-label={lang === 'en' ? 'Select frame' : 'Frame seç'}
                 min={0}
                 max={data.frames.length - 1}
                 defaultValue={0}
@@ -1138,7 +1147,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
             {/* ST-GCN pencere-bazlı doğruluk zaman çizelgesi (hrnet_stgcn için, faz dağılımı yerine) */}
             {isHrnetStgcn && classification?.windows && classification.windows.length > 0 && (
               <div className="flex items-center gap-2">
-                <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none" title="ST-GCN pencere sonuçları — tıkla: o ana git">ST-GCN</span>
+                <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none" title={lang === 'en' ? 'ST-GCN window results — click to jump' : 'ST-GCN pencere sonuçları — tıkla: o ana git'}>ST-GCN</span>
                 <div className="relative h-2.5 rounded overflow-hidden w-full bg-slate-800">
                   {classification.windows.map((w, i) => {
                     const leftPct = (w.start_frame / Math.max(data.meta.frame_count - 1, 1)) * 100
@@ -1147,8 +1156,8 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
                       <div
                         key={i}
                         title={w.valid === false
-                          ? `Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): geçersiz bölge (kişi kadraj dışı/takip kaybı) — karara katılmadı`
-                          : `Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)} — tıkla: o ana git`}
+                          ? lang === 'en' ? `Window ${i + 1} (frames ${w.start_frame}-${w.end_frame}): invalid segment (subject out of frame) — excluded from decision` : `Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): geçersiz bölge (kişi kadraj dışı/takip kaybı) — karara katılmadı`
+                          : lang === 'en' ? `Window ${i + 1} (frames ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · ${(w.confidence * 100).toFixed(0)}% — click to jump` : `Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)} — tıkla: o ana git`}
                         className={`absolute top-0 h-full opacity-70 cursor-pointer hover:opacity-100 ${
                           w.valid === false ? 'bg-slate-600' : isPositiveLabel(w.label) ? 'bg-emerald-500' : 'bg-red-500'}`}
                         style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
@@ -1200,7 +1209,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
-                <button type="button" title="Başa dön"
+                <button type="button" title={lang === 'en' ? 'Go to start' : 'Başa dön'}
                   onClick={() => { setPlaying(false); frameIdxRef.current = 0; setFrameIdx(0) }}
                   className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
                   <SkipBack className="w-4 h-4" />
@@ -1209,7 +1218,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
                   className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <button type="button" title={playing ? 'Durdur' : 'Oynat'}
+                <button type="button" title={playing ? (lang === 'en' ? 'Pause' : 'Durdur') : (lang === 'en' ? 'Play' : 'Oynat')}
                   onClick={() => setPlaying(p => !p)}
                   className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors">
                   {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -1218,7 +1227,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
                   className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
                   <ChevronRight className="w-4 h-4" />
                 </button>
-                <button type="button" title="Sona git"
+                <button type="button" title={lang === 'en' ? 'Go to end' : 'Sona git'}
                   onClick={() => { setPlaying(false); const n = data.frames.length - 1; frameIdxRef.current = n; setFrameIdx(n) }}
                   className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
                   <SkipForward className="w-4 h-4" />
