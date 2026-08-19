@@ -154,6 +154,8 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   const overlayBufferRef = useRef<Record<string, Point2D | undefined>[]>([])
 
   const [mode, setMode] = useState<Mode>('camera')
+  // Mobil/tablet: hastayı çekmek için ARKA kamera gerekir; varsayılan ön (selfie) kamera.
+  const [facing, setFacing] = useState<'user' | 'environment'>('user')
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [modelReady, setModelReady] = useState(false)
   const [state, setState] = useState<LoadState>('loading-model')
@@ -170,7 +172,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   // bağlama effect'ini (mode/videoFile değişmese bile) yeniden tetikler.
   const [retryKey, setRetryKey] = useState(0)
 
-  mirrorRef.current = mode === 'camera'
+  mirrorRef.current = mode === 'camera' && facing === 'user'  // arka kamerada ayna yanlış olur
 
   const stopCurrentSource = useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop())
@@ -274,7 +276,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       try {
         setState('requesting-camera')
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: facing } },
           audio: false,
         })
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
@@ -319,7 +321,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
 
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, videoFile, modelReady, stopCurrentSource, retryKey])
+  }, [mode, videoFile, modelReady, stopCurrentSource, retryKey, facing])
 
   // ── Algılama döngüsü — model hazır olduğu sürece sürekli çalışır,
   //    aktif kaynaktan kare gelmiyorsa (henüz hazır değilse) sessizce bekler ──
@@ -668,7 +670,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         </div>
       </div>
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-col md:flex-row flex-1 min-h-0">
         <div className="flex-1 min-w-0 relative flex items-center justify-center bg-black">
           <video ref={videoRef} playsInline muted className="hidden" />
           <canvas ref={canvasRef} className="max-w-full max-h-full" />
@@ -747,6 +749,16 @@ export function LivePractice({ onClose }: LivePracticeProps) {
               className="hidden absolute top-14 left-1/2 -translate-x-1/2 max-w-[85%] text-center text-xs px-3 py-1.5 rounded-lg bg-amber-900/85 text-amber-200 border border-amber-700/50"
             />
           )}
+          {state === 'running' && mode === 'camera' && (
+            <button
+              type="button"
+              onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')}
+              title={facing === 'user' ? 'Arka kameraya geç' : 'Ön kameraya geç'}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-900/80 text-slate-200 hover:bg-slate-800 border border-slate-700/60 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> {facing === 'user' ? 'Arka Kamera' : 'Ön Kamera'}
+            </button>
+          )}
           {state === 'running' && mode === 'file' && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-900/80 rounded-lg p-1">
               <button type="button" onClick={togglePlay} title={playing ? 'Duraklat' : 'Oynat'}
@@ -762,7 +774,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
           )}
         </div>
 
-        <div className="w-64 shrink-0 border-l border-slate-800 flex flex-col">
+        <div className="w-full md:w-64 shrink-0 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col max-h-[45vh] md:max-h-none">
           {/* Tabs */}
           <div className="flex border-b border-slate-800 shrink-0 px-2 pt-1">
             {([

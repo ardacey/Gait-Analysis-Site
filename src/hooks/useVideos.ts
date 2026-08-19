@@ -259,9 +259,26 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
   const handleDelete = useCallback(async () => {
     if (!videoToDelete || !client || !supabaseBucket) return
     try {
+      // Kayda ait TÜM storage nesneleri: orijinal video + worker'ın ürettikleri (SDR transcode,
+      // annotate video, features CSV, analysis JSON). Önceden sadece file_path siliniyordu,
+      // gerisi bucket'ta artık olarak birikiyordu. Üretilen dosyaların yolu kayıttaki public
+      // URL'lerden çıkarılıyor (iki worker dönemi de farklı adlandırma kullandı — URL kesin).
+      const pathFromUrl = (url: string | null): string | null => {
+        if (!url) return null
+        const m = url.match(new RegExp(`/object/public/${supabaseBucket}/(.+?)(\\?|$)`))
+        return m ? decodeURIComponent(m[1]) : null
+      }
+      const paths = [
+        videoToDelete.file_path,
+        pathFromUrl(videoToDelete.file_url),       // SDR transcode (worker file_url'i günceller)
+        pathFromUrl(videoToDelete.annotated_url),
+        pathFromUrl(videoToDelete.features_url),
+        pathFromUrl(videoToDelete.analysis_url),
+      ].filter((p2, i, arr): p2 is string => !!p2 && arr.indexOf(p2) === i)
+
       const { data: removedFiles, error: storageError } = await client.storage
         .from(supabaseBucket)
-        .remove([videoToDelete.file_path])
+        .remove(paths)
       if (storageError || !removedFiles?.length) {
         onToast('Storage silinemedi. Policy veya path kontrol edin.', 'error')
         return

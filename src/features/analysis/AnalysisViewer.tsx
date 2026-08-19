@@ -207,6 +207,69 @@ const PHASE_TR: Record<string, string> = {
   double_float: 'Belirsiz', 'n/a': 'Geçersiz Kare',
 }
 
+// PDF raporu için açı eğrisi görüntüsü — recharts DOM'a bağlı olduğu için rapor penceresinde
+// kullanılamıyor; seriler offscreen canvas'a çizilip data-URL olarak gömülüyor.
+function drawAngleChart(
+  data: AnalysisData,
+  series: { key: string; color: string; label: string }[],
+): string | null {
+  const W = 1480, H = 360, PAD_L = 70, PAD_R = 20, PAD_T = 20, PAD_B = 46
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const duration = data.meta.duration || 1
+  const yMin = 0, yMax = 200
+  const x = (t: number) => PAD_L + (t / duration) * (W - PAD_L - PAD_R)
+  const y = (v: number) => PAD_T + (1 - (v - yMin) / (yMax - yMin)) * (H - PAD_T - PAD_B)
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, W, H)
+  // grid + eksen etiketleri
+  ctx.strokeStyle = '#e2e8f0'
+  ctx.fillStyle = '#94a3b8'
+  ctx.font = '20px Arial'
+  ctx.lineWidth = 1
+  for (let v = 0; v <= 200; v += 50) {
+    ctx.beginPath(); ctx.moveTo(PAD_L, y(v)); ctx.lineTo(W - PAD_R, y(v)); ctx.stroke()
+    ctx.fillText(`${v}°`, 12, y(v) + 7)
+  }
+  const tickStep = duration > 20 ? 5 : duration > 8 ? 2 : 1
+  for (let t = 0; t <= duration; t += tickStep) {
+    ctx.fillText(`${t.toFixed(0)}s`, x(t) - 10, H - 14)
+  }
+  // seriler
+  let drew = false
+  for (const sr of series) {
+    const vals = data.timeseries[sr.key]
+    if (!vals || vals.length === 0) continue
+    ctx.strokeStyle = sr.color
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    let started = false
+    vals.forEach((v, i) => {
+      if (v == null || isNaN(v) || v <= 0 || v >= 350) { started = false; return }
+      const px = x(data.frames[i]?.t ?? (i / vals.length) * duration)
+      const py = y(v)
+      if (!started) { ctx.moveTo(px, py); started = true } else { ctx.lineTo(px, py) }
+    })
+    ctx.stroke()
+    drew = true
+  }
+  if (!drew) return null
+  // lejant
+  let lx = PAD_L
+  for (const sr of series) {
+    ctx.fillStyle = sr.color
+    ctx.fillRect(lx, 4, 22, 8)
+    ctx.fillStyle = '#475569'
+    ctx.fillText(sr.label, lx + 28, 14)
+    lx += 28 + ctx.measureText(sr.label).width + 30
+  }
+  return canvas.toDataURL('image/png')
+}
+
 function generateReport(data: AnalysisData, filename: string) {
   const w = window.open('', '_blank', 'width=820,height=1000')
   if (!w) { alert('Açılır pencere engellendi.'); return }
@@ -241,6 +304,14 @@ function generateReport(data: AnalysisData, filename: string) {
   const feedbackSection = feedbackRows
     ? `<h2>Geri Bildirim ve Normatif Karşılaştırma</h2><table><thead><tr><th>Değerlendirme</th><th>Açıklama</th></tr></thead><tbody>${feedbackRows}</tbody></table>`
     : ''
+  const kneeChart = drawAngleChart(data, [
+    { key: 'L Knee', color: '#60a5fa', label: 'Sol Diz' },
+    { key: 'R Knee', color: '#2563eb', label: 'Sağ Diz' },
+  ])
+  const hipChart = drawAngleChart(data, [
+    { key: 'L Hip', color: '#34d399', label: 'Sol Kalça' },
+    { key: 'R Hip', color: '#059669', label: 'Sağ Kalça' },
+  ])
   const now = new Date().toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' })
   w.document.write(`<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Yürüyüş Analiz Raporu</title>
 <style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1e293b;font-size:13px}h1{background:#1d4ed8;color:white;margin:-24px -24px 24px;padding:20px 24px;font-size:18px}h2{font-size:14px;color:#1d4ed8;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-top:24px}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#f1f5f9;text-align:left;padding:6px 10px;font-size:12px}td{padding:5px 10px;border-bottom:1px solid #e2e8f0}tr:last-child td{border-bottom:none}.meta{display:flex;gap:40px;background:#f8fafc;padding:12px 16px;border-radius:6px;margin-bottom:8px}.meta-item label{font-size:11px;color:#64748b;display:block}.meta-item span{font-weight:bold}.note{margin-top:32px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}@media print{body{padding:12px}h1{margin:-12px -12px 16px}}</style>
@@ -251,6 +322,8 @@ ${clsBanner}
 ${feedbackSection}
 <h2>Temporal-Spatial Parametreler</h2><table><thead><tr><th>Parametre</th><th>Değer</th></tr></thead><tbody>${metricRows}</tbody></table>
 <h2>Eklem Hareket Açıklığı (ROM)</h2><table><thead><tr><th>Eklem</th><th>Min</th><th>Max</th><th>Ortalama</th><th>ROM</th></tr></thead><tbody>${romRows}</tbody></table>
+${kneeChart ? `<h2>Diz Açısı Eğrisi</h2><img src="${kneeChart}" style="width:100%;border:1px solid #e2e8f0;border-radius:6px" alt="Diz açısı grafiği" />` : ''}
+${hipChart ? `<h2>Kalça Açısı Eğrisi</h2><img src="${hipChart}" style="width:100%;border:1px solid #e2e8f0;border-radius:6px" alt="Kalça açısı grafiği" />` : ''}
 <h2>Yürüyüş Fazı Dağılımı</h2><table><thead><tr><th>Faz</th><th>Süre Oranı</th></tr></thead><tbody>${phaseRows}</tbody></table>
 <div class="note">Bu rapor otomatik görüntü analizi ile üretilmiştir. Klinik karar için uzman değerlendirmesi gereklidir.</div>
 </body></html>`)
@@ -313,7 +386,7 @@ function AnglePanel({
   ]
 
   return (
-    <div className="w-80 shrink-0 border-l border-slate-800 flex flex-col bg-slate-950/60">
+    <div className="w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col bg-slate-950/60 max-h-[45vh] md:max-h-none">
 
       {/* Frame counter */}
       <div className="text-xs text-slate-500 flex justify-between px-4 pt-3 pb-2 shrink-0">
@@ -784,10 +857,10 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               return chips
             })()}
           </div>
-          <div className="flex flex-1 min-h-0">
-            <div className="flex-1 min-w-0 relative flex">
+          <div className="flex flex-col md:flex-row flex-1 min-h-0">
+            <div className="flex-1 min-w-0 relative flex flex-col sm:flex-row">
               {viewMode === 'both' && video.annotated_url && (
-                <div className="flex-1 min-w-0 bg-black flex items-center justify-center border-r border-slate-800">
+                <div className="flex-1 min-w-0 bg-black flex items-center justify-center border-b sm:border-b-0 sm:border-r border-slate-800">
                   {/* preload=auto: scrub sirasinda currentTime atamalarinin aninda kare
                       gostermesi icin. muted: otomatik oynatma kisitlarina takilmasin. */}
                   <video

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 
 import type { AnalysisMethod, UserRole, VideoRecord } from '../../types'
+import { RecordingGuide } from './RecordingGuide'
 
 interface DashboardProps {
   role: UserRole
@@ -92,6 +93,7 @@ export function Dashboard({
   const [method] = useState<AnalysisMethod>('hrnet_stgcn')
   const dragCounter = useRef(0)
   // Liste filtreleri — özellikle doktor tarafında video sayısı büyüyünce gerekli.
+  const [showGuide, setShowGuide] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'done' | 'processing' | 'queued' | 'error'>('all')
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'status'>('newest')
@@ -374,8 +376,18 @@ export function Dashboard({
 
             <input ref={inputRef} type="file" accept="video/*" onChange={handleFileChange(method)} className="hidden" aria-label="Video dosyası seç" />
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowGuide(true)}
+              className="text-xs text-blue-600 hover:text-blue-700 hover:underline font-medium"
+            >
+              📋 Nasıl video çekmeliyim? — çekim rehberi
+            </button>
           </div>
         )}
+
+        {showGuide && <RecordingGuide onClose={() => setShowGuide(false)} />}
 
         {/* VİDEO LİSTESİ */}
         <div className="space-y-4">
