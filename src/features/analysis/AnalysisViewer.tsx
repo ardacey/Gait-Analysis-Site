@@ -5,7 +5,6 @@ import {
 } from 'lucide-react'
 import type { AnalysisData, AnalysisFrame, FeedbackItem, UserRole, VideoRecord } from '../../types'
 import supabase from '../../lib/supabaseClient'
-import { GaitFeedback } from '../../components/analysis/GaitFeedback'
 import { Skeleton3D, type Skeleton3DHandle } from './Skeleton3D'
 import { AnglesGraph } from './AnglesGraph'
 import { getAngleColor } from '../../lib/angleRanges'
@@ -418,26 +417,9 @@ interface AnglePanelHandle { update: (f: AnalysisFrame, frameIdx: number) => voi
 
 interface AnomalyMoment { joint: string; frameIdx: number; t: number; value: number; deviation: number }
 
-// Açı kartı mini eğrisi — tüm videonun o eklem serisi (statik, 0-200° bandı, artıklar kırpık).
-function Sparkline({ values }: { values: number[] }) {
-  const clean = values.map(v => (v == null || isNaN(v) || v <= 0 || v >= 350 ? null : Math.min(v, 200)))
-  if (clean.filter(v => v != null).length < 8) return null
-  const W = 100, H = 22
-  const pts: string[] = []
-  clean.forEach((v, i) => {
-    if (v == null) return
-    pts.push(`${(i / (clean.length - 1)) * W},${H - (v / 200) * H}`)
-  })
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-5 mt-1 opacity-60" preserveAspectRatio="none">
-      <polyline points={pts.join(' ')} fill="none" stroke="currentColor" strokeWidth="1.2" className="text-slate-400" />
-    </svg>
-  )
-}
-
 function AnglePanel({
   initialFrame, summary, frameCount,
-  panelRef, feedback, anomalyMoments, onJumpToFrame, timeseries, explanation,
+  panelRef, feedback, anomalyMoments, onJumpToFrame, explanation,
 }: {
   initialFrame: AnalysisFrame
   summary: Record<string, number>
@@ -446,200 +428,202 @@ function AnglePanel({
   feedback?: FeedbackItem[]
   anomalyMoments?: AnomalyMoment[]
   onJumpToFrame?: (n: number) => void
-  timeseries?: Record<string, number[]>
   explanation?: { joints: { name: string; delta: number }[]; n_windows: number }
 }) {
-  const [tab, setTab] = useState<PanelTab>(feedback?.length ? 'feedback' : 'angles')
-  // Metrik akordiyonu — ilk grup açık, gerisi katlı (30 satırlık duvar yerine)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  // ── Tasarım D: "Birleşik Bulgu Satırları" ──────────────────────────────────
+  // Sekmeler yok. Yapı (yukarıdan aşağı): canlı açı çipleri (ref ile kare-kare güncellenir)
+  // → kompakt karar özeti (occlusion + sapma anları) → tek sürekli BULGULAR listesi:
+  // uyarı/bilgi satırları üstte detaylı, normal kontroller tek satır, kalan metrikler ince
+  // grup başlıkları altında sade satırlar. Metrik/uyarı ayrımı yok — hepsi aynı bulgu akışı.
   const angleRefs = useRef<Record<string, HTMLSpanElement | null>>({})
   const angleDivRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const frameNumRef = useRef<HTMLSpanElement | null>(null)
   const timeRef = useRef<HTMLSpanElement | null>(null)
+  const { lang } = useLang()
 
   useEffect(() => {
     panelRef.current = {
-      openTab(t: PanelTab) { setTab(t) },
+      openTab() { /* sekme kalmadı — özet çipi paneli zaten görünür kılıyor */ },
       update(f: AnalysisFrame, frameIdx: number) {
         if (timeRef.current) timeRef.current.textContent = `t = ${f.t.toFixed(2)}s`
-        // "Frame N / toplam" sayacı — ref'e yazan tek yer burası (önceden hiç güncellenmiyordu,
-        // gösterge 1'de takılı kalıyordu)
         if (frameNumRef.current) frameNumRef.current.textContent = String(frameIdx + 1)
         for (const [key, val] of Object.entries(f.angles) as [string, number][]) {
           const span = angleRefs.current[key]
-          if (span) span.textContent = `${val.toFixed(1)}°`
+          if (span) span.textContent = `${val.toFixed(0)}°`
           const div = angleDivRefs.current[key]
           if (div) {
             const { bg, text } = getAngleColor(key, val)
-            div.className = `rounded-lg px-2.5 py-1.5 ${bg}`
-            if (span) span.className = `text-sm font-bold font-mono ${text}`
+            div.className = `rounded-lg px-2 py-1 text-center ${bg}`
+            if (span) span.className = `text-xs font-bold font-mono ${text}`
           }
         }
       }
     }
   }, [panelRef])
 
-  const { lang, t } = useLang()
-  const tabs: { id: PanelTab; label: string; disabled?: boolean }[] = [
-    { id: 'feedback', label: lang === 'en' ? 'Assessment' : 'Değerlendirme', disabled: !feedback?.length },
-    { id: 'angles',   label: t('analysis.tabs.angles') },
-    { id: 'metrics',  label: t('analysis.tabs.metrics') },
-  ]
+  // Bulgu satırlarını kur: feedback (ST-GCN maddesi hariç — o başlıkta rozet olarak var)
+  const fbRows = (feedback ?? []).filter(f => f.metric !== 'stgcn_classification')
+  const warnRows = fbRows.filter(f => f.type === 'warning' || f.type === 'info')
+  const okRows = fbRows.filter(f => f.type === 'good')
+  // feedback'in zaten temsil ettiği summary anahtarları düz listede tekrarlanmasın
+  const COVERED: Record<string, string[]> = {
+    l_knee_rom: ['l_knee_rom'], r_knee_rom: ['r_knee_rom'],
+    knee_symmetry: ['knee_rom_lr_diff'], hip_symmetry: ['hip_angle_mean_lr_diff'],
+    cadence: ['cadence'], walking_speed: ['walking_speed'],
+    step_rhythm: ['step_time_cv_pct'], step_time_symmetry: ['step_time_lr_diff_pct'],
+  }
+  const covered = new Set(fbRows.flatMap(f => COVERED[f.metric] ?? []))
+  const restGroups = groupMetrics(
+    Object.fromEntries(Object.entries(summary).filter(([k]) => !covered.has(k)))
+  )
+
+  const statusDot = (type: string) =>
+    type === 'warning' ? 'bg-amber-400' : type === 'info' ? 'bg-blue-400' : 'bg-emerald-500'
 
   return (
     <div className="w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col bg-slate-950/60 max-h-[45vh] md:max-h-none">
 
-      {/* Frame counter */}
+      {/* Frame sayacı */}
       <div className="text-xs text-slate-500 flex justify-between px-4 pt-3 pb-2 shrink-0">
-        <span>{t('analysis.frame')} <span ref={frameNumRef} className="text-slate-300 font-mono">1</span> / {frameCount}</span>
+        <span>{lang === 'en' ? 'Frame' : 'Frame'} <span ref={frameNumRef} className="text-slate-300 font-mono">1</span> / {frameCount}</span>
         <span ref={timeRef} className="font-mono text-slate-300">t = {initialFrame.t.toFixed(2)}s</span>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-800 shrink-0 px-2">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            type="button"
-            disabled={t.disabled}
-            onClick={() => setTab(t.id)}
-            className={`flex-1 py-1.5 text-xs font-medium transition-colors rounded-t
-              ${t.disabled
-                ? 'text-slate-700 cursor-not-allowed'
-                : tab === t.id
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Canlı açı çipleri — 3 sütun, kare-kare güncellenir */}
+      <div className="px-3 pb-2 shrink-0">
+        <div className="grid grid-cols-3 gap-1">
+          {(Object.entries(initialFrame.angles) as [string, number][]).map(([key, val]) => {
+            const { bg, text } = getAngleColor(key, val)
+            return (
+              <div key={key} ref={el => { angleDivRefs.current[key] = el }} className={`rounded-lg px-2 py-1 text-center ${bg}`}>
+                <div className="text-[9px] text-slate-500 leading-tight truncate">
+                  {(lang === 'en' ? ANGLE_LABELS_EN[key] : undefined) ?? ANGLE_LABELS[key] ?? key}
+                </div>
+                <span ref={el => { angleRefs.current[key] = el }} className={`text-xs font-bold font-mono ${text}`}>
+                  {val.toFixed(0)}°
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Tab content — angles section always rendered (refs must stay mounted) */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-3">
 
-        {/* AÇILAR — hidden via CSS, never unmounted */}
-        <div className={tab !== 'angles' ? 'hidden' : ''}>
-          <div className="grid grid-cols-2 gap-1.5">
-            {(Object.entries(initialFrame.angles) as [string, number][]).map(([key, val]) => {
-              const { bg, text } = getAngleColor(key, val)
-              return (
-                <div
-                  key={key}
-                  ref={el => { angleDivRefs.current[key] = el }}
-                  className={`rounded-lg px-2.5 py-1.5 ${bg}`}
-                >
-                  <div className="text-xs text-slate-500">{(lang === 'en' ? ANGLE_LABELS_EN[key] : undefined) ?? ANGLE_LABELS[key] ?? key}</div>
-                  <span
-                    ref={el => { angleRefs.current[key] = el }}
-                    className={`text-sm font-bold font-mono ${text}`}
-                  >
-                    {val.toFixed(1)}°
-                  </span>
-                  {timeseries?.[key] && <Sparkline values={timeseries[key]} />}
-                </div>
-              )
-            })}
+        {/* Karar özeti: occlusion + sapma anları (kompakt) */}
+        {explanation && explanation.joints.length > 0 && (
+          <div className="rounded-xl bg-red-950/20 border border-red-900/40 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-red-300/80 mb-1.5">
+              {lang === 'en' ? 'Regions Driving the Decision' : 'Kararı Sürükleyen Bölgeler'}
+            </div>
+            <div className="space-y-1">
+              {(() => {
+                const grouped = groupExplanation(explanation.joints).slice(0, 4)
+                const max = grouped[0]?.delta || 1
+                return grouped.map(j => (
+                  <div key={j.name} className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 text-[11px] text-slate-400 truncate">
+                      {(lang === 'en' ? NODE_EN[j.name] : NODE_TR[j.name]) ?? j.name}
+                    </span>
+                    <div className="flex-1 h-1.5 rounded bg-slate-800 overflow-hidden">
+                      <div
+                        className={`h-full ${j.name.startsWith('L_') ? 'bg-blue-500' : j.name.startsWith('R_') ? 'bg-red-500' : 'bg-slate-400'}`}
+                        style={{ width: `${(j.delta / max) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              })()}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* METRİKLER */}
-        {tab === 'metrics' && Object.keys(summary).length > 0 && (
-          <div className="flex flex-col gap-2">
-            {groupMetrics(summary).map((g, gi) => (
-              <div key={g.title} className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setOpenGroups(o => ({ ...o, [g.title]: !(o[g.title] ?? gi === 0) }))}
-                  className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-800/40 hover:bg-slate-800/70 transition-colors"
-                >
-                  <span>{lang === 'en' ? (METRIC_GROUP_TITLES_EN[g.title] ?? g.title) : g.title}
-                    <span className="ml-1.5 normal-case tracking-normal text-slate-600">({g.items.length})</span>
-                  </span>
-                  <span className="text-slate-600">{(openGroups[g.title] ?? gi === 0) ? '▲' : '▼'}</span>
-                </button>
-                <div className={`px-3 py-1 ${(openGroups[g.title] ?? gi === 0) ? '' : 'hidden'}`}>
-                  {g.items.map(([key, val]) => {
-                    const m = processMetric(key, val, lang)
-                    return (
-                      <div key={key} className="flex justify-between items-center gap-2 py-1 border-b border-slate-800/60 last:border-0">
-                        <span className="text-xs text-slate-400">{m.label}</span>
-                        <span className="text-xs font-mono font-bold text-slate-200 whitespace-nowrap">{m.value}{m.unit ? ` ${m.unit}` : ''}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+        {anomalyMoments && anomalyMoments.length > 0 && (
+          <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 px-2 py-1.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-1 mb-0.5">
+              {lang === 'en' ? 'Top Deviation Moments' : 'En Belirgin Sapma Anları'}
+            </div>
+            {anomalyMoments.slice(0, 3).map((m, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onJumpToFrame?.(m.frameIdx)}
+                className="w-full flex items-center justify-between gap-2 px-1 py-1 rounded-lg hover:bg-slate-800/70 transition-colors text-left"
+              >
+                <span className="text-[11px] text-slate-300">{(lang === 'en' ? ANGLE_LABELS_EN[m.joint] : undefined) ?? ANGLE_LABELS[m.joint] ?? m.joint}</span>
+                <span className="text-[10px] font-mono text-slate-500">t={m.t.toFixed(1)}s · <span className="text-red-400">{m.deviation > 0 ? '+' : ''}{m.deviation.toFixed(0)}°</span></span>
+              </button>
             ))}
           </div>
         )}
 
-        {/* GERİ BİLDİRİM */}
-        {tab === 'feedback' && feedback && (
-          <div className="flex flex-col gap-3">
-            {explanation && explanation.joints.length > 0 && (
-              <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
-                  {lang === 'en' ? 'Regions Driving the Decision' : 'Kararı Sürükleyen Bölgeler'}
-                </div>
-                <div className="px-3 py-2 space-y-1.5">
-                  {(() => {
-                    const grouped = groupExplanation(explanation.joints)
-                    const max = grouped[0]?.delta || 1
-                    return grouped.map(j => (
-                      <div key={j.name} className="flex items-center gap-2">
-                        <span className="w-28 shrink-0 text-xs text-slate-400">
-                          {(lang === 'en' ? NODE_EN[j.name] : NODE_TR[j.name]) ?? j.name}
-                        </span>
-                        <div className="flex-1 h-2 rounded bg-slate-800 overflow-hidden">
-                          <div
-                            className={`h-full ${j.name.startsWith('L_') ? 'bg-blue-500' : j.name.startsWith('R_') ? 'bg-red-500' : 'bg-slate-400'}`}
-                            style={{ width: `${(j.delta / max) * 100}%` }}
-                          />
-                        </div>
-                        <span className="w-10 text-right text-[10px] font-mono text-slate-500">+{j.delta.toFixed(1)}</span>
-                      </div>
-                    ))
-                  })()}
-                  <p className="text-[10px] text-slate-500 pt-1">
-                    {lang === 'en'
-                      ? 'Occlusion analysis: how much each region pushed the model toward "abnormal". Research output, not a diagnosis.'
-                      : 'Occlusion analizi: her bölgenin modeli "anormal" kararına ne kadar ittiği. Araştırma çıktısıdır, tanı değildir.'}
-                  </p>
-                </div>
-              </div>
-            )}
-            {anomalyMoments && anomalyMoments.length > 0 && (
-              <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
-                  {t('analysis.deviations')}
-                </div>
-                <div className="px-1 py-1">
-                  {anomalyMoments.map((m, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => onJumpToFrame?.(m.frameIdx)}
-                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/70 transition-colors text-left"
-                      title="O ana git"
-                    >
-                      <span className="text-xs text-slate-300">{(lang === 'en' ? ANGLE_LABELS_EN[m.joint] : undefined) ?? ANGLE_LABELS[m.joint] ?? m.joint}</span>
-                      <span className="text-[11px] font-mono text-slate-400">
-                        t={m.t.toFixed(1)}s · {m.value.toFixed(0)}° <span className="text-red-400">({m.deviation > 0 ? '+' : ''}{m.deviation.toFixed(0)}°)</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <GaitFeedback feedback={feedback} variant="dark" collapsibleGoods />
+        {/* BULGULAR — birleşik akış */}
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            {lang === 'en' ? 'Findings' : 'Bulgular'}
           </div>
-        )}
+
+          {/* uyarı/bilgi satırları: detaylı */}
+          <div className="space-y-1.5">
+            {warnRows.map((f, i) => (
+              <div key={i} className={`rounded-lg px-2.5 py-2 border ${
+                f.type === 'warning' ? 'bg-amber-950/30 border-amber-900/40' : 'bg-blue-950/30 border-blue-900/40'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+                    <span className={`w-1.5 h-1.5 rounded-full ${statusDot(f.type)}`} />
+                    {f.label}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-slate-300 whitespace-nowrap">
+                    {typeof f.value === 'number' ? f.value.toFixed(1) : f.value}{f.unit ? ` ${f.unit}` : ''}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug mt-1">{f.message}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* normal kontroller: tek satır */}
+          {okRows.length > 0 && (
+            <div className="mt-1.5 rounded-lg border border-slate-800/80 bg-slate-900/40 divide-y divide-slate-800/60">
+              {okRows.map((f, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 px-2.5 py-1.5" title={f.message}>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className={`w-1.5 h-1.5 rounded-full ${statusDot('good')}`} />
+                    {f.label}
+                  </span>
+                  <span className="text-xs font-mono text-slate-300 whitespace-nowrap">
+                    {typeof f.value === 'number' ? f.value.toFixed(1) : f.value}{f.unit ? ` ${f.unit}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* kalan metrikler: ince grup başlıklı sade satırlar */}
+          {restGroups.map(g => (
+            <div key={g.title} className="mt-2">
+              <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-600 px-0.5 mb-0.5">
+                {lang === 'en' ? (METRIC_GROUP_TITLES_EN[g.title] ?? g.title) : g.title}
+              </div>
+              <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 divide-y divide-slate-800/40">
+                {g.items.map(([key, val]) => {
+                  const m = processMetric(key, val, lang)
+                  return (
+                    <div key={key} className="flex items-center justify-between gap-2 px-2.5 py-1">
+                      <span className="text-[11px] text-slate-500">{m.label}</span>
+                      <span className="text-[11px] font-mono text-slate-300 whitespace-nowrap">{m.value}{m.unit ? ` ${m.unit}` : ''}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
+
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewerProps) {
@@ -1113,7 +1097,6 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
               panelRef={anglePanelRef}
               feedback={data.feedback}
               anomalyMoments={anomalyMoments}
-              timeseries={data.timeseries}
               explanation={data.classification?.explanation}
               onJumpToFrame={n => {
                 setPlaying(false)
