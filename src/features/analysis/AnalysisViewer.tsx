@@ -452,11 +452,16 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
       }
     }
     if (graphLineRef.current) {
+      // Oynatma döngüsüyle AYNI geometri: imleç konumu gerçek grid dikdörtgeninden hesaplanır.
+      // Önceki sabit 30px/38px marj tahmini gerçek recharts yerleşiminden sapıyordu — grafiğe
+      // tıklanınca çizgi tıklanan noktanın soluna düşüyordu.
       const parent = graphLineRef.current.parentElement
-      if (parent) {
-        const w = parent.clientWidth - 38
+      const grid = parent?.querySelector('.recharts-cartesian-grid')
+      if (parent && grid) {
         const pct = data.meta.duration > 0 ? f.t / data.meta.duration : 0
-        graphLineRef.current.style.left = `${30 + pct * w}px`
+        const parentRect = parent.getBoundingClientRect()
+        const gridRect = grid.getBoundingClientRect()
+        graphLineRef.current.style.left = `${gridRect.left - parentRect.left + pct * gridRect.width}px`
       }
     }
   }, [])
