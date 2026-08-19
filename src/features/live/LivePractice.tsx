@@ -148,6 +148,10 @@ export function LivePractice({ onClose }: LivePracticeProps) {
   // BAĞIMSIZ, kendi model dosyasını kendi yükler; yoksa `ready` hep false kalır ve tüm push/
   // maybeClassify çağrıları no-op'a yakın davranır (sadece küçük bir bellek buffer'ı doldurur).
   const gaitClassifierRef = useRef(new LiveGaitClassifier())
+  // Overlay iskeletinin GORSEL yumusatmasi (5-karelik medyan) — offline annotate'e eklenen
+  // filtrenin canli karsiligi. SADECE cizim icin: aci/metrik/siniflandirici ham keypoint alir
+  // (siniflandirici kendi ic smoothing'iyle egitildi, cift filtre dagilim kaydirir).
+  const overlayBufferRef = useRef<Record<string, Point2D | undefined>[]>([])
 
   const [mode, setMode] = useState<Mode>('camera')
   const [videoFile, setVideoFile] = useState<File | null>(null)
@@ -182,6 +186,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
     stepTimingRef.current = { stepTimeMeanSec: null, stepTimeCvPct: null, lrDiffPct: null }
     freezeCheckRef.current = { lastPos: null, stableSinceT: null }
     gaitClassifierRef.current.reset()
+    overlayBufferRef.current = []
     setGraphData([])
     setLiveFeedback([])
     setGaitClassification(null)
@@ -339,6 +344,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
       // artan olduğu için bu kontrol orada hiç tetiklenmez, zararsız.
       if (video.currentTime < lastVideoTimeRef.current - 0.5) {
         gaitClassifierRef.current.reset()
+        overlayBufferRef.current = []
       }
       lastVideoTimeRef.current = video.currentTime
 
@@ -443,11 +449,34 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         }
       }
 
+      // Cizim icin 5-karelik medyan (bkz. overlayBufferRef yorumu) — dusuk skorlu noktalar
+      // filtreye girmez, 3'ten az ornek varsa ham nokta kullanilir.
+      const buf = overlayBufferRef.current
+      buf.push(byName)
+      if (buf.length > 5) buf.shift()
+      const drawName: Record<string, Point2D | undefined> = {}
+      for (const name of MOVENET_KEYPOINT_NAMES) {
+        const cur = byName[name]
+        if (!cur || (cur.score ?? 0) < MIN_SCORE) { drawName[name] = cur; continue }
+        const xs: number[] = [], ys: number[] = []
+        for (const frame of buf) {
+          const p = frame[name]
+          if (p && (p.score ?? 0) >= MIN_SCORE) { xs.push(p.x); ys.push(p.y) }
+        }
+        if (xs.length >= 3) {
+          xs.sort((q, r) => q - r); ys.sort((q, r) => q - r)
+          const mid = Math.floor(xs.length / 2)
+          drawName[name] = { x: xs[mid], y: ys[mid], score: cur.score }
+        } else {
+          drawName[name] = cur
+        }
+      }
+
       if (keypoints && keypoints.length > 0) {
         ctx.lineWidth = 3
         ctx.strokeStyle = '#475569'
         for (const [a, b] of SKELETON_EDGES) {
-          const pa = byName[a], pb = byName[b]
+          const pa = drawName[a], pb = drawName[b]
           if (!pa || !pb || (pa.score ?? 0) < MIN_SCORE || (pb.score ?? 0) < MIN_SCORE) continue
           ctx.beginPath()
           ctx.moveTo(pa.x, pa.y)
@@ -456,7 +485,7 @@ export function LivePractice({ onClose }: LivePracticeProps) {
         }
 
         for (const name of MOVENET_KEYPOINT_NAMES) {
-          const p = byName[name]
+          const p = drawName[name]
           if (!p || (p.score ?? 0) < MIN_SCORE) continue
           ctx.beginPath()
           ctx.arc(p.x, p.y, 5, 0, Math.PI * 2)

@@ -11,6 +11,43 @@ interface UseVideosOptions {
   onToast: (message: string, type?: 'success' | 'error' | 'info') => void
 }
 
+// ── Yükleme öncesi istemci-taraflı video ön-kontrolü ─────────────────────────
+// Amaç: bozuk/çok kısa/aşırı uzun videolar TRUBA kuyruğuna hiç girmesin (worker GPU dakikası
+// + kullanıcının bekleyip "error" görmesi yerine anında geri bildirim). fps tarayıcıda
+// güvenilir okunamadığı için kontrol edilmiyor; süre/çözünürlük/oynatılabilirlik yeterli.
+const MIN_DURATION_SEC = 5    // ST-GCN penceresi ~3.7sn — altı hiç pencere üretmez
+const WARN_DURATION_SEC = 8   // tek pencereyle kararsız sonuç riski
+const MAX_DURATION_SEC = 300  // işleme süresi/kota koruması
+const MIN_HEIGHT_PX = 240
+
+interface VideoCheck { error?: string; warning?: string }
+
+function checkVideoFile(file: File): Promise<VideoCheck> {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file)
+    const v = document.createElement('video')
+    v.preload = 'metadata'
+    const done = (r: VideoCheck) => { URL.revokeObjectURL(url); resolve(r) }
+    v.onloadedmetadata = () => {
+      if (!isFinite(v.duration) || v.duration <= 0) {
+        done({ error: `"${file.name}" okunamadı (süre bilgisi yok).` })
+      } else if (v.duration < MIN_DURATION_SEC) {
+        done({ error: `"${file.name}" çok kısa (${v.duration.toFixed(1)}sn) — analiz için en az ${MIN_DURATION_SEC}sn kesintisiz yürüyüş gerekli.` })
+      } else if (v.duration > MAX_DURATION_SEC) {
+        done({ error: `"${file.name}" çok uzun (${Math.round(v.duration)}sn) — en fazla ${MAX_DURATION_SEC / 60} dakikalık video yükleyin.` })
+      } else if (v.videoHeight > 0 && v.videoHeight < MIN_HEIGHT_PX) {
+        done({ error: `"${file.name}" çözünürlüğü çok düşük (${v.videoWidth}x${v.videoHeight}) — poz tespiti güvenilir çalışmaz.` })
+      } else if (v.duration < WARN_DURATION_SEC) {
+        done({ warning: `"${file.name}" kısa (${v.duration.toFixed(1)}sn) — daha güvenilir sonuç için 10sn+ video önerilir.` })
+      } else {
+        done({})
+      }
+    }
+    v.onerror = () => done({ error: `"${file.name}" tarayıcıda açılamadı — desteklenmeyen/bozuk video olabilir.` })
+    v.src = url
+  })
+}
+
 export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOptions) {
   const [videos, setVideos] = useState<VideoRecord[]>([])
   const [loadingVideos, setLoadingVideos] = useState(false)
@@ -152,6 +189,16 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
           onToast(`"${file.name}" çok büyük!`, 'error')
           return
         }
+      }
+
+      // Ön-kontrol (bkz. checkVideoFile) — hata varsa hiçbir dosya yüklenmez
+      for (const file of files) {
+        const check = await checkVideoFile(file)
+        if (check.error) {
+          onToast(check.error, 'error')
+          return
+        }
+        if (check.warning) onToast(check.warning, 'info')
       }
 
       setIsUploading(true)
