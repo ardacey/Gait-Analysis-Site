@@ -29,8 +29,11 @@ export function AuthScreen({
 }: AuthScreenProps) {
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-blue-50 px-4">
-      <Card className="w-full max-w-lg shadow-2xl border-0">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-white to-blue-50 px-4 relative overflow-hidden">
+      {/* Dekoratif arka plan lekeleri — dashboard'daki yükleme kartıyla aynı görsel dil */}
+      <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-100/60 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -left-24 w-[28rem] h-[28rem] bg-indigo-100/50 rounded-full blur-3xl pointer-events-none" />
+      <Card className="w-full max-w-lg shadow-2xl border-0 relative">
         {/* Sekmeler */}
         <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-t-xl">
           <button
@@ -161,6 +164,10 @@ export function AuthScreen({
           </form>
         </CardContent>
       </Card>
+      <p className="relative mt-6 text-xs text-slate-400 text-center max-w-sm">
+        Video tabanlı yürüyüş analizi — yüklenen videolar yalnızca analiz amacıyla işlenir,
+        canlı pratik görüntüleri cihazınızdan dışarı çıkmaz.
+      </p>
     </div>
   )
 }

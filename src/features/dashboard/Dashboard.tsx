@@ -28,6 +28,23 @@ const METHOD_LABELS: Record<AnalysisMethod, { short: string; badge: string }> = 
   hrnet_stgcn:  { short: '2D · HRNet+ST-GCN',  badge: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' },
 }
 
+// ST-GCN sonuç rozeti — kartta durumun yanında ASIL bilgiyi (sınıflandırma sonucu) gösterir.
+// İki etiket dönemi (bkz. types.ts StgcnLabel): normal/abnormal (yürüyüş) ve
+// correct/incorrect (eski egzersiz kayıtları).
+function ResultBadge({ label, confidence }: { label: string | null; confidence: number | null }) {
+  if (!label) return null
+  const positive = label === 'normal' || label === 'correct'
+  const text = label === 'normal' ? 'Normal' : label === 'abnormal' ? 'Anormal'
+    : label === 'correct' ? 'Doğru İcra' : 'Hatalı İcra'
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border ${
+      positive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+      {positive ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+      {text}{confidence != null ? ` · %${(confidence * 100).toFixed(0)}` : ''}
+    </span>
+  )
+}
+
 function StatusBadge({ jobStatus }: { jobStatus: string | null }) {
   if (!jobStatus) return null
   if (jobStatus === 'queued') return (
@@ -72,6 +89,18 @@ export function Dashboard({
   // Tek aktif yöntem (bkz. yöntem seçicinin kaldırıldığı yerdeki yorum) — setMethod bilinçli yok.
   const [method] = useState<AnalysisMethod>('hrnet_stgcn')
   const dragCounter = useRef(0)
+  // Liste filtreleri — özellikle doktor tarafında video sayısı büyüyünce gerekli.
+  const [statusFilter, setStatusFilter] = useState<'all' | 'done' | 'processing' | 'queued' | 'error'>('all')
+  const [search, setSearch] = useState('')
+
+  const filteredVideos = videos.filter(v => {
+    if (statusFilter !== 'all' && v.job_status !== statusFilter) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!v.file_name.toLowerCase().includes(q) && !v.user_name.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
 
   function onDragEnter(e: React.DragEvent) {
     e.preventDefault()
@@ -213,9 +242,37 @@ export function Dashboard({
                 : <><UserPlus className="w-4 h-4 text-emerald-500" /> Bekleyen Hasta Videoları</>
               }
               {!loadingVideos && videos.length > 0 && (
-                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{videos.length}</span>
+                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredVideos.length}/{videos.length}</span>
               )}
             </h3>
+
+            {videos.length > 3 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {([['all', 'Tümü'], ['done', 'Tamamlandı'], ['processing', 'İşleniyor'], ['queued', 'Kuyrukta'], ['error', 'Hata']] as const).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setStatusFilter(k)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                        statusFilter === k
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={isPatient ? 'Dosya ara…' : 'Hasta/dosya ara…'}
+                  className="text-xs px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200 w-40"
+                />
+              </div>
+            )}
           </div>
 
           {loadingVideos ? (
@@ -231,19 +288,21 @@ export function Dashboard({
                 </div>
               ))}
             </div>
-          ) : videos.length === 0 ? (
+          ) : filteredVideos.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-slate-200 bg-white/60">
               <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
                 <Film className="w-7 h-7 text-slate-300" />
               </div>
-              <p className="font-semibold text-slate-700">Henüz video yok</p>
+              <p className="font-semibold text-slate-700">{videos.length === 0 ? 'Henüz video yok' : 'Filtreyle eşleşen video yok'}</p>
               <p className="text-sm text-slate-400 mt-1">
-                {isPatient ? 'Yeni analiz başlatmak için yukarıya video yükleyin.' : 'Hasta videoları burada görünecek.'}
+                {videos.length > 0
+                  ? 'Filtreyi veya aramayı temizleyin.'
+                  : isPatient ? 'Yeni analiz başlatmak için yukarıya video yükleyin.' : 'Hasta videoları burada görünecek.'}
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {videos.map((video) => {
+              {filteredVideos.map((video) => {
                 const st = video.job_status ?? ''
                 const accent = STATUS_ACCENT[st] ?? 'from-slate-400 to-slate-500'
                 return (
@@ -270,7 +329,9 @@ export function Dashboard({
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
-                          <StatusBadge jobStatus={st} />
+                          {st === 'done' && video.stgcn_label
+                            ? <ResultBadge label={video.stgcn_label} confidence={video.stgcn_confidence} />
+                            : <StatusBadge jobStatus={st} />}
                           <span className="text-[10px] text-slate-400">
                             {new Date(video.created_at).toLocaleDateString('tr-TR')}
                           </span>
