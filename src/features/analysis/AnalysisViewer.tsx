@@ -215,7 +215,7 @@ function generateReport(data: AnalysisData, filename: string) {
 }
 
 // ─── AnglePanel: updates via DOM refs during playback ─────────────────────────
-interface AnglePanelHandle { update: (f: AnalysisFrame) => void }
+interface AnglePanelHandle { update: (f: AnalysisFrame, frameIdx: number) => void }
 
 type PanelTab = 'angles' | 'metrics' | 'feedback'
 
@@ -237,8 +237,11 @@ function AnglePanel({
 
   useEffect(() => {
     panelRef.current = {
-      update(f: AnalysisFrame) {
+      update(f: AnalysisFrame, frameIdx: number) {
         if (timeRef.current) timeRef.current.textContent = `t = ${f.t.toFixed(2)}s`
+        // "Frame N / toplam" sayacı — ref'e yazan tek yer burası (önceden hiç güncellenmiyordu,
+        // gösterge 1'de takılı kalıyordu)
+        if (frameNumRef.current) frameNumRef.current.textContent = String(frameIdx + 1)
         for (const [key, val] of Object.entries(f.angles) as [string, number][]) {
           const span = angleRefs.current[key]
           if (span) span.textContent = `${val.toFixed(1)}°`
@@ -384,7 +387,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
 
       // All updates bypass React — direct DOM + Three.js
       skeletonRef.current?.updateFrame(f.joints, f.angles as unknown as Record<string, number>)
-      anglePanelRef.current?.update(f)
+      anglePanelRef.current?.update(f, next)
       if (scrubberRef.current) scrubberRef.current.value = String(next)
       if (timeDisplayRef.current) timeDisplayRef.current.textContent = `${f.t.toFixed(2)}s / ${data.meta.duration.toFixed(2)}s · ${data.meta.fps.toFixed(0)} fps`
       // Update gait phase badge
@@ -420,7 +423,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     const data = dataRef.current
     if (!data) return
     const f = data.frames[n]
-    anglePanelRef.current?.update(f)
+    anglePanelRef.current?.update(f, n)
     if (scrubberRef.current) scrubberRef.current.value = String(n)
     if (timeDisplayRef.current) timeDisplayRef.current.textContent = `${f.t.toFixed(2)}s / ${data.meta.duration.toFixed(2)}s · ${data.meta.fps.toFixed(0)} fps`
     if (phaseBadgeRef.current) {
