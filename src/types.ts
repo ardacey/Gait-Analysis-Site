@@ -79,5 +79,7 @@ export interface AnalysisData {
     // değer olarak korunuyor. 'stgcn': mevcut/güncel model.
     model: 'scgnet' | 'stgcn'
     windows?: ClassificationWindow[]
+    // occlusion tabanlı karar açıklaması (anormal kararlarda) — eklem başına logit katkısı
+    explanation?: { joints: { name: string; delta: number }[]; n_windows: number }
   }
 }

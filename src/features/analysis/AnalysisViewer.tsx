@@ -189,6 +189,34 @@ const METRIC_GROUP_TITLES_EN: Record<string, string> = {
   'Kalite': 'Quality', 'Diğer': 'Other',
 }
 
+// Occlusion açıklaması görselleştirme yardımcıları — baş düğümleri (burun/göz/kulak)
+// tek "Baş" kalemi altında toplanır (tekil göz/kulak katkısı klinik olarak yorumlanmaz,
+// baş postürü sinyalinin parçalarıdır).
+const HEAD_NODES = new Set(['Nose', 'L_Eye', 'R_Eye', 'L_Ear', 'R_Ear'])
+const NODE_TR: Record<string, string> = {
+  L_Shoulder: 'Sol Omuz', R_Shoulder: 'Sağ Omuz', L_Elbow: 'Sol Dirsek', R_Elbow: 'Sağ Dirsek',
+  L_Wrist: 'Sol Bilek', R_Wrist: 'Sağ Bilek', L_Hip: 'Sol Kalça', R_Hip: 'Sağ Kalça',
+  L_Knee: 'Sol Diz', R_Knee: 'Sağ Diz', L_Ankle: 'Sol Ayak Bileği', R_Ankle: 'Sağ Ayak Bileği',
+  Hip: 'Pelvis', Head: 'Baş',
+}
+const NODE_EN: Record<string, string> = {
+  L_Shoulder: 'Left Shoulder', R_Shoulder: 'Right Shoulder', L_Elbow: 'Left Elbow', R_Elbow: 'Right Elbow',
+  L_Wrist: 'Left Wrist', R_Wrist: 'Right Wrist', L_Hip: 'Left Hip', R_Hip: 'Right Hip',
+  L_Knee: 'Left Knee', R_Knee: 'Right Knee', L_Ankle: 'Left Ankle', R_Ankle: 'Right Ankle',
+  Hip: 'Pelvis', Head: 'Head',
+}
+
+function groupExplanation(joints: { name: string; delta: number }[]) {
+  const out: { name: string; delta: number }[] = []
+  let head = 0
+  for (const j of joints) {
+    if (HEAD_NODES.has(j.name)) head += j.delta
+    else out.push({ ...j })
+  }
+  if (head > 0) out.push({ name: 'Head', delta: head })
+  return out.sort((a, b) => b.delta - a.delta).slice(0, 6)
+}
+
 interface MetricInfo { label: string; value: string; unit: string }
 function processMetric(key: string, raw: number, lang: 'tr' | 'en' = 'tr'): MetricInfo {
   const k = key.toLowerCase()
@@ -409,7 +437,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 function AnglePanel({
   initialFrame, summary, frameCount,
-  panelRef, feedback, anomalyMoments, onJumpToFrame, timeseries,
+  panelRef, feedback, anomalyMoments, onJumpToFrame, timeseries, explanation,
 }: {
   initialFrame: AnalysisFrame
   summary: Record<string, number>
@@ -419,6 +447,7 @@ function AnglePanel({
   anomalyMoments?: AnomalyMoment[]
   onJumpToFrame?: (n: number) => void
   timeseries?: Record<string, number[]>
+  explanation?: { joints: { name: string; delta: number }[]; n_windows: number }
 }) {
   const [tab, setTab] = useState<PanelTab>('angles')
   const angleRefs = useRef<Record<string, HTMLSpanElement | null>>({})
@@ -540,6 +569,38 @@ function AnglePanel({
         {/* GERİ BİLDİRİM */}
         {tab === 'feedback' && feedback && (
           <div className="flex flex-col gap-3">
+            {explanation && explanation.joints.length > 0 && (
+              <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
+                  {lang === 'en' ? 'Regions Driving the Decision' : 'Kararı Sürükleyen Bölgeler'}
+                </div>
+                <div className="px-3 py-2 space-y-1.5">
+                  {(() => {
+                    const grouped = groupExplanation(explanation.joints)
+                    const max = grouped[0]?.delta || 1
+                    return grouped.map(j => (
+                      <div key={j.name} className="flex items-center gap-2">
+                        <span className="w-28 shrink-0 text-xs text-slate-400">
+                          {(lang === 'en' ? NODE_EN[j.name] : NODE_TR[j.name]) ?? j.name}
+                        </span>
+                        <div className="flex-1 h-2 rounded bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full ${j.name.startsWith('L_') ? 'bg-blue-500' : j.name.startsWith('R_') ? 'bg-red-500' : 'bg-slate-400'}`}
+                            style={{ width: `${(j.delta / max) * 100}%` }}
+                          />
+                        </div>
+                        <span className="w-10 text-right text-[10px] font-mono text-slate-500">+{j.delta.toFixed(1)}</span>
+                      </div>
+                    ))
+                  })()}
+                  <p className="text-[10px] text-slate-500 pt-1">
+                    {lang === 'en'
+                      ? 'Occlusion analysis: how much each region pushed the model toward "abnormal". Research output, not a diagnosis.'
+                      : 'Occlusion analizi: her bölgenin modeli "anormal" kararına ne kadar ittiği. Araştırma çıktısıdır, tanı değildir.'}
+                  </p>
+                </div>
+              </div>
+            )}
             {anomalyMoments && anomalyMoments.length > 0 && (
               <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
                 <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
@@ -1035,6 +1096,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
               feedback={data.feedback}
               anomalyMoments={anomalyMoments}
               timeseries={data.timeseries}
+              explanation={data.classification?.explanation}
               onJumpToFrame={n => {
                 setPlaying(false)
                 frameIdxRef.current = n
