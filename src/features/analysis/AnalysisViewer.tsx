@@ -170,6 +170,35 @@ function processMetric(key: string, raw: number): MetricInfo {
   return { label, value: raw.toFixed(3), unit: '' }
 }
 
+// Metrikler sekmesi gruplama — 30+ anahtarlı düz liste okunmuyordu; klinik mantıkla
+// bölümleniyor. Sıra: en çok bakılan yukarıda. Eşleşmeyen anahtar 'Diğer'e düşer.
+const METRIC_GROUPS: { title: string; match: (k: string) => boolean }[] = [
+  { title: 'Zamansal-Mekânsal', match: k =>
+    ['cadence', 'walking_speed', 'stride_length_mean', 'step_count'].includes(k) ||
+    k.startsWith('step_length_l') || k.startsWith('step_length_r') ||
+    k.startsWith('step_time_') || k.startsWith('stride_time_') || k === 'step_time_mean' },
+  { title: 'Yürüyüş Fazları', match: k =>
+    k.startsWith('stance_pct') || k.startsWith('swing_pct') || k === 'double_support_pct' },
+  { title: 'Simetri & Değişkenlik', match: k =>
+    k.includes('_lr_diff') || k.endsWith('_cv_pct') || k.includes('sway') },
+  { title: 'Eklem Kinematiği', match: k =>
+    k.includes('_rom') || k.includes('angle_mean') || k.includes('angular_') ||
+    k.includes('stance_mean') || k.includes('swing_mean') || k.includes('swing_min') },
+  { title: 'Kalite', match: k => k === 'valid_frame_ratio' },
+]
+
+function groupMetrics(summary: Record<string, number>): { title: string; items: [string, number][] }[] {
+  const used = new Set<string>()
+  const groups = METRIC_GROUPS.map(g => {
+    const items = Object.entries(summary).filter(([k]) => !used.has(k) && g.match(k))
+    items.forEach(([k]) => used.add(k))
+    return { title: g.title, items }
+  }).filter(g => g.items.length > 0)
+  const rest = Object.entries(summary).filter(([k]) => !used.has(k))
+  if (rest.length > 0) groups.push({ title: 'Diğer', items: rest })
+  return groups
+}
+
 // ─── PDF report ───────────────────────────────────────────────────────────────
 const PHASE_TR: Record<string, string> = {
   swing: 'Salınım', stance: 'Duruş', mid_stance: 'Orta Duruş',
@@ -278,7 +307,7 @@ function AnglePanel({
   ]
 
   return (
-    <div className="w-72 shrink-0 border-l border-slate-800 flex flex-col">
+    <div className="w-80 shrink-0 border-l border-slate-800 flex flex-col bg-slate-950/60">
 
       {/* Frame counter */}
       <div className="text-xs text-slate-500 flex justify-between px-4 pt-3 pb-2 shrink-0">
@@ -336,16 +365,25 @@ function AnglePanel({
 
         {/* METRİKLER */}
         {tab === 'metrics' && Object.keys(summary).length > 0 && (
-          <div className="flex flex-col gap-1">
-            {Object.entries(summary).map(([key, val]) => {
-              const m = processMetric(key, val)
-              return (
-                <div key={key} className="flex justify-between items-center py-1 border-b border-slate-800 last:border-0">
-                  <span className="text-xs text-slate-400">{m.label}</span>
-                  <span className="text-xs font-mono font-bold text-slate-200">{m.value}{m.unit ? ` ${m.unit}` : ''}</span>
+          <div className="flex flex-col gap-3">
+            {groupMetrics(summary).map(g => (
+              <div key={g.title} className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
+                  {g.title}
                 </div>
-              )
-            })}
+                <div className="px-3 py-1">
+                  {g.items.map(([key, val]) => {
+                    const m = processMetric(key, val)
+                    return (
+                      <div key={key} className="flex justify-between items-center gap-2 py-1 border-b border-slate-800/60 last:border-0">
+                        <span className="text-xs text-slate-400">{m.label}</span>
+                        <span className="text-xs font-mono font-bold text-slate-200 whitespace-nowrap">{m.value}{m.unit ? ` ${m.unit}` : ''}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -629,32 +667,38 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
             />
           </div>
 
-          {/* Controls */}
-          <div className="shrink-0 border-t border-slate-800 px-4 py-2 flex flex-col gap-2">
-            <input
-              ref={scrubberRef}
-              type="range"
-              title="Frame seç"
-              aria-label="Frame seç"
-              min={0}
-              max={data.frames.length - 1}
-              defaultValue={0}
-              onChange={e => {
-                setPlaying(false)
-                const n = Number(e.target.value)
-                frameIdxRef.current = n
-                const f = dataRef.current?.frames[n]
-                if (f) skeletonRef.current?.updateFrame(f.joints, f.angles as unknown as Record<string, number>)
-                syncUI(n)
-                setFrameIdx(n)
-              }}
-              className="w-full accent-blue-500 h-1.5 cursor-pointer"
-            />
+          {/* Controls — zaman çizelgesi yığını: kaydırıcı + ST-GCN + faz şeritleri aynı
+              sol-etiket kolonuyla hizalanır ki tek bir zaman ekseni gibi okunsun (önceden
+              alt alta bağımsız çubuklar dağınık görünüyordu). */}
+          <div className="shrink-0 border-t border-slate-800 px-4 py-2 flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none">Zaman</span>
+              <input
+                ref={scrubberRef}
+                type="range"
+                title="Frame seç"
+                aria-label="Frame seç"
+                min={0}
+                max={data.frames.length - 1}
+                defaultValue={0}
+                onChange={e => {
+                  setPlaying(false)
+                  const n = Number(e.target.value)
+                  frameIdxRef.current = n
+                  const f = dataRef.current?.frames[n]
+                  if (f) skeletonRef.current?.updateFrame(f.joints, f.angles as unknown as Record<string, number>)
+                  syncUI(n)
+                  setFrameIdx(n)
+                }}
+                className="w-full accent-blue-500 h-1.5 cursor-pointer"
+              />
+            </div>
 
             {/* ST-GCN pencere-bazlı doğruluk zaman çizelgesi (hrnet_stgcn için, faz dağılımı yerine) */}
             {isHrnetStgcn && classification?.windows && classification.windows.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <div className="relative h-2 rounded overflow-hidden w-full bg-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none" title="ST-GCN pencere sonuçları — tıkla: o ana git">ST-GCN</span>
+                <div className="relative h-2.5 rounded overflow-hidden w-full bg-slate-800">
                   {classification.windows.map((w, i) => {
                     const leftPct = (w.start_frame / Math.max(data.meta.frame_count - 1, 1)) * 100
                     const widthPct = ((w.end_frame - w.start_frame + 1) / Math.max(data.meta.frame_count, 1)) * 100
@@ -678,18 +722,18 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                     )
                   })}
                 </div>
-                <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                  <span>ST-GCN pencere sonuçları (zaman içinde, örtüşmeli) · tıkla → o ana git</span>
+                <span className="shrink-0 flex items-center gap-2 text-[10px] text-slate-500">
                   <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />{classification.windows.some(w => w.label === 'normal' || w.label === 'abnormal') ? 'Normal' : 'Doğru'}</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-red-500" />{classification.windows.some(w => w.label === 'normal' || w.label === 'abnormal') ? 'Anormal' : 'Hatalı'}</span>
-                </div>
+                </span>
               </div>
             )}
 
             {/* Gait phase distribution bar */}
             {phaseDist.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <div className="flex h-2 rounded overflow-hidden w-full">
+              <div className="flex items-center gap-2">
+                <span className="w-12 shrink-0 text-right text-[10px] text-slate-600 select-none">Faz</span>
+                <div className="flex h-2.5 rounded overflow-hidden w-full">
                   {phaseDist.map(({ phase, pct }) => (
                     <div
                       key={phase}
@@ -699,15 +743,14 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                     />
                   ))}
                 </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                  {phaseDist.map(({ phase, pct }) => (
-                    <span key={phase} className="flex items-center gap-1 text-[10px] text-slate-400">
+                <span className="shrink-0 flex items-center gap-2 text-[10px] text-slate-400">
+                  {phaseDist.slice(0, 3).map(({ phase, pct }) => (
+                    <span key={phase} className="flex items-center gap-1">
                       <span className={`inline-block w-2 h-2 rounded-sm ${PHASE_BAR_CLASS[phase] ?? 'bg-slate-500'}`} />
-                      {GAIT_PHASE_LABELS[phase]?.label ?? phase}
-                      <span className="text-slate-500">{pct.toFixed(1)}%</span>
+                      {GAIT_PHASE_LABELS[phase]?.label ?? phase} <span className="text-slate-500">%{pct.toFixed(0)}</span>
                     </span>
                   ))}
-                </div>
+                </span>
               </div>
             )}
 
