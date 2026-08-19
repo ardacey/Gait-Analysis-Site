@@ -612,6 +612,11 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
       const high = q3 + 1.5 * iqr
       const jointSet = new Set<number>()
       data.frames.forEach((f, i) => {
+        // gait_phase==='n/a' = backend'in geçersiz saydığı kare (kadraj dışı/takip kaybı) —
+        // sapma listesi ve grafik noktaları bu kareleri KULLANMAZ (gözlem: kadraj çıkışı
+        // tüm sapma listesini domine ediyordu). Faz alanı hiç yoksa (eski MeTRAbs kayıtları
+        // 'n/a' üretmez) eski davranış korunur.
+        if (f.gait_phase === 'n/a' && data.frames.some(fr => fr.gait_phase !== 'n/a')) return
         const val = (f.angles as Record<string, number>)[key]
         if (val != null && (val < low || val > high)) jointSet.add(i)
       })
@@ -880,8 +885,11 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                     return (
                       <div
                         key={i}
-                        title={`Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)} — tıkla: o ana git`}
-                        className={`absolute top-0 h-full opacity-70 cursor-pointer hover:opacity-100 ${isPositiveLabel(w.label) ? 'bg-emerald-500' : 'bg-red-500'}`}
+                        title={w.valid === false
+                          ? `Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): geçersiz bölge (kişi kadraj dışı/takip kaybı) — karara katılmadı`
+                          : `Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)} — tıkla: o ana git`}
+                        className={`absolute top-0 h-full opacity-70 cursor-pointer hover:opacity-100 ${
+                          w.valid === false ? 'bg-slate-600' : isPositiveLabel(w.label) ? 'bg-emerald-500' : 'bg-red-500'}`}
                         style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                         onClick={() => {
                           // "Model burayı anormal buldu" → videoyu pencerenin başına atla

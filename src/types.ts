@@ -55,6 +55,9 @@ export interface ClassificationWindow {
   end_frame: number
   label: StgcnLabel
   confidence: number
+  // false: pencere düşük geçerli-kare oranı nedeniyle karara katılmadı (kadraj-dışı bölge) —
+  // UI gri gösterir. Eski kayıtlarda alan yok (undefined = geçerli say).
+  valid?: boolean
 }
 
 export interface AnalysisData {
