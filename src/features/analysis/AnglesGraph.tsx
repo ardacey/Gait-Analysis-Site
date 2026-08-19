@@ -4,6 +4,7 @@ import {
   ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
 import type { AnalysisFrame } from '../../types'
+import { ANGLE_RANGES } from '../../lib/angleRanges'
 
 interface AnglesGraphProps {
   frames: AnalysisFrame[]
@@ -34,6 +35,10 @@ const PHASE_FILL: Record<string, string> = {
   mid_stance:       'rgba(16,185,129,0.16)',
   loading_response: 'rgba(251,191,36,0.10)',
   terminal_stance:  'rgba(139,92,246,0.10)',
+  // HRNet bacak-başına fazlar (compute_gait_events) — dağılım çubuğuyla aynı renk aileleri
+  double_support:   'rgba(16,185,129,0.12)',
+  l_swing:          'rgba(59,130,246,0.10)',
+  r_swing:          'rgba(34,211,238,0.10)',
 }
 
 export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphProps) {
@@ -110,7 +115,7 @@ export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphPr
             {g}
           </button>
         ))}
-        <span className="ml-auto text-xs text-slate-600">tıkla → frame atla</span>
+        <span className="ml-auto text-xs text-slate-600">kesikli bant = normal aralık · tıkla → frame atla</span>
       </div>
 
       <div ref={chartContainerRef} onClick={handleMouseClick} className="cursor-crosshair">
@@ -130,6 +135,22 @@ export function AnglesGraph({ frames, onFrameChange, anomalyMap }: AnglesGraphPr
               strokeOpacity={0}
             />
           ))}
+
+          {/* Normatif bant — seçili eklem grubunun klinik "dikkat" aralığı (angleRanges.ts,
+              canlı/analiz renklendirmesiyle AYNI kaynak). L/R aynı aralığı paylaşıyor. */}
+          {(() => {
+            const r = ANGLE_RANGES[lines[0].key]
+            if (!r) return null
+            return (
+              <ReferenceArea
+                y1={r.warnLow}
+                y2={r.warnHigh}
+                fill="rgba(148,163,184,0.07)"
+                stroke="rgba(148,163,184,0.25)"
+                strokeDasharray="4 4"
+              />
+            )
+          })()}
 
           <XAxis
             dataKey="t"

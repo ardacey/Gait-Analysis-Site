@@ -199,12 +199,27 @@ function generateReport(data: AnalysisData, filename: string) {
   const phaseRows = Object.entries(phaseDist).map(([ph, cnt]) =>
     `<tr><td>${PHASE_TR[ph] ?? ph}</td><td>${((cnt/totalF)*100).toFixed(1)}%</td></tr>`
   ).join('')
+  // Sınıflandırma banner'ı + geri bildirim bölümü (normatif sapma mesajları dahil)
+  const cls = data.classification
+  const clsBanner = cls
+    ? `<div class="meta" style="margin-top:8px"><div class="meta-item"><label>ST-GCN Sınıflandırma</label><span style="color:${cls.label === 'normal' || cls.label === 'correct' ? '#059669' : '#dc2626'}">${
+        cls.label === 'normal' ? 'Normal Yürüyüş' : cls.label === 'abnormal' ? 'Anormal Yürüyüş' :
+        cls.label === 'correct' ? 'Doğru İcra' : 'Hatalı İcra'} · %${(cls.confidence * 100).toFixed(0)} güven</span></div></div>`
+    : ''
+  const feedbackRows = (data.feedback ?? []).map(fb =>
+    `<tr><td style="white-space:nowrap">${fb.type === 'good' ? '✓' : '⚠'} ${fb.label}</td><td>${fb.message}</td></tr>`
+  ).join('')
+  const feedbackSection = feedbackRows
+    ? `<h2>Geri Bildirim ve Normatif Karşılaştırma</h2><table><thead><tr><th>Değerlendirme</th><th>Açıklama</th></tr></thead><tbody>${feedbackRows}</tbody></table>`
+    : ''
   const now = new Date().toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' })
   w.document.write(`<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Yürüyüş Analiz Raporu</title>
 <style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1e293b;font-size:13px}h1{background:#1d4ed8;color:white;margin:-24px -24px 24px;padding:20px 24px;font-size:18px}h2{font-size:14px;color:#1d4ed8;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-top:24px}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#f1f5f9;text-align:left;padding:6px 10px;font-size:12px}td{padding:5px 10px;border-bottom:1px solid #e2e8f0}tr:last-child td{border-bottom:none}.meta{display:flex;gap:40px;background:#f8fafc;padding:12px 16px;border-radius:6px;margin-bottom:8px}.meta-item label{font-size:11px;color:#64748b;display:block}.meta-item span{font-weight:bold}.note{margin-top:32px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}@media print{body{padding:12px}h1{margin:-12px -12px 16px}}</style>
 </head><body>
 <h1>Yürüyüş Analiz Raporu</h1>
 <div class="meta"><div class="meta-item"><label>Video</label><span>${filename}</span></div><div class="meta-item"><label>Süre</label><span>${data.meta.duration.toFixed(2)}s</span></div><div class="meta-item"><label>FPS</label><span>${data.meta.fps.toFixed(0)}</span></div><div class="meta-item"><label>Rapor Tarihi</label><span>${now}</span></div></div>
+${clsBanner}
+${feedbackSection}
 <h2>Temporal-Spatial Parametreler</h2><table><thead><tr><th>Parametre</th><th>Değer</th></tr></thead><tbody>${metricRows}</tbody></table>
 <h2>Eklem Hareket Açıklığı (ROM)</h2><table><thead><tr><th>Eklem</th><th>Min</th><th>Max</th><th>Ortalama</th><th>ROM</th></tr></thead><tbody>${romRows}</tbody></table>
 <h2>Yürüyüş Fazı Dağılımı</h2><table><thead><tr><th>Faz</th><th>Süre Oranı</th></tr></thead><tbody>${phaseRows}</tbody></table>
@@ -641,17 +656,27 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
                     return (
                       <div
                         key={i}
-                        title={`Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)}`}
-                        className={`absolute top-0 h-full opacity-70 ${isPositiveLabel(w.label) ? 'bg-emerald-500' : 'bg-red-500'}`}
+                        title={`Pencere ${i + 1} (kare ${w.start_frame}-${w.end_frame}): ${labelText(w.label, true)} · %${(w.confidence * 100).toFixed(0)} — tıkla: o ana git`}
+                        className={`absolute top-0 h-full opacity-70 cursor-pointer hover:opacity-100 ${isPositiveLabel(w.label) ? 'bg-emerald-500' : 'bg-red-500'}`}
                         style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                        onClick={() => {
+                          // "Model burayı anormal buldu" → videoyu pencerenin başına atla
+                          setPlaying(false)
+                          const n = Math.min(w.start_frame, data.frames.length - 1)
+                          frameIdxRef.current = n
+                          const f = dataRef.current?.frames[n]
+                          if (f) skeletonRef.current?.updateFrame(f.joints, f.angles as unknown as Record<string, number>)
+                          syncUI(n)
+                          setFrameIdx(n)
+                        }}
                       />
                     )
                   })}
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                  <span>ST-GCN pencere sonuçları (zaman içinde, örtüşmeli)</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />Doğru</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-red-500" />Hatalı</span>
+                  <span>ST-GCN pencere sonuçları (zaman içinde, örtüşmeli) · tıkla → o ana git</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />{classification.windows.some(w => w.label === 'normal' || w.label === 'abnormal') ? 'Normal' : 'Doğru'}</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-red-500" />{classification.windows.some(w => w.label === 'normal' || w.label === 'abnormal') ? 'Anormal' : 'Hatalı'}</span>
                 </div>
               </div>
             )}
