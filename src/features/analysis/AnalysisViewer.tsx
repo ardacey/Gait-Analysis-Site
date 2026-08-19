@@ -259,19 +259,24 @@ ${feedbackSection}
 }
 
 // ─── AnglePanel: updates via DOM refs during playback ─────────────────────────
-interface AnglePanelHandle { update: (f: AnalysisFrame, frameIdx: number) => void }
-
 type PanelTab = 'angles' | 'metrics' | 'feedback'
+
+interface AnglePanelHandle { update: (f: AnalysisFrame, frameIdx: number) => void; openTab: (t: PanelTab) => void }
+
+
+interface AnomalyMoment { joint: string; frameIdx: number; t: number; value: number; deviation: number }
 
 function AnglePanel({
   initialFrame, summary, frameCount,
-  panelRef, feedback,
+  panelRef, feedback, anomalyMoments, onJumpToFrame,
 }: {
   initialFrame: AnalysisFrame
   summary: Record<string, number>
   frameCount: number
   panelRef: React.MutableRefObject<AnglePanelHandle | null>
   feedback?: FeedbackItem[]
+  anomalyMoments?: AnomalyMoment[]
+  onJumpToFrame?: (n: number) => void
 }) {
   const [tab, setTab] = useState<PanelTab>('angles')
   const angleRefs = useRef<Record<string, HTMLSpanElement | null>>({})
@@ -281,6 +286,7 @@ function AnglePanel({
 
   useEffect(() => {
     panelRef.current = {
+      openTab(t: PanelTab) { setTab(t) },
       update(f: AnalysisFrame, frameIdx: number) {
         if (timeRef.current) timeRef.current.textContent = `t = ${f.t.toFixed(2)}s`
         // "Frame N / toplam" sayacı — ref'e yazan tek yer burası (önceden hiç güncellenmiyordu,
@@ -389,7 +395,32 @@ function AnglePanel({
 
         {/* GERİ BİLDİRİM */}
         {tab === 'feedback' && feedback && (
-          <GaitFeedback feedback={feedback} variant="dark" />
+          <div className="flex flex-col gap-3">
+            {anomalyMoments && anomalyMoments.length > 0 && (
+              <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
+                  En Belirgin Sapma Anları
+                </div>
+                <div className="px-1 py-1">
+                  {anomalyMoments.map((m, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => onJumpToFrame?.(m.frameIdx)}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/70 transition-colors text-left"
+                      title="O ana git"
+                    >
+                      <span className="text-xs text-slate-300">{ANGLE_LABELS[m.joint] ?? m.joint}</span>
+                      <span className="text-[11px] font-mono text-slate-400">
+                        t={m.t.toFixed(1)}s · {m.value.toFixed(0)}° <span className="text-red-400">({m.deviation > 0 ? '+' : ''}{m.deviation.toFixed(0)}°)</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <GaitFeedback feedback={feedback} variant="dark" />
+          </div>
         )}
       </div>
     </div>
@@ -403,6 +434,11 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
   const [error, setError] = useState<string | null>(null)
   const [frameIdx, setFrameIdx] = useState(0)     // only used for scrubbing + graph
   const [playing, setPlaying] = useState(false)
+  // Annotate'li video görünümü: 'both' = video + iskelet yan yana (annotated_url varsa
+  // varsayılan), 'skeleton' = sadece 3D iskelet. Oynatma sırasında video ana saat kaynağıdır
+  // (rAF ile currentTime okunup iskelet o kareye senkronlanır) — iki ayrı saat kaymaz.
+  const [viewMode, setViewMode] = useState<'both' | 'skeleton'>(video.annotated_url ? 'both' : 'skeleton')
+  const annotatedVideoRef = useRef<HTMLVideoElement | null>(null)
 
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const skeletonRef = useRef<Skeleton3DHandle>(null)
@@ -427,6 +463,33 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     if (!playing || !dataRef.current) return
     const data = dataRef.current
     const fps = Math.min(data.meta.fps, 30)
+
+    // Video-sürücülü mod: annotate'li video görünürse gerçek saat video'dur.
+    const vid = annotatedVideoRef.current
+    if (vid) {
+      let raf = 0
+      const nativeFps = data.meta.fps || 30
+      vid.currentTime = data.frames[frameIdxRef.current]?.t ?? 0
+      void vid.play()
+      const tick = () => {
+        const n = Math.max(0, Math.min(data.frames.length - 1, Math.round(vid.currentTime * nativeFps)))
+        if (n !== frameIdxRef.current) {
+          frameIdxRef.current = n
+          const f = data.frames[n]
+          skeletonRef.current?.updateFrame(f.joints, f.angles as unknown as Record<string, number>)
+          anglePanelRef.current?.update(f, n)
+          syncUI(n)
+        }
+        if (vid.ended) {
+          setPlaying(false)
+          setFrameIdx(frameIdxRef.current)
+          return
+        }
+        raf = requestAnimationFrame(tick)
+      }
+      raf = requestAnimationFrame(tick)
+      return () => { cancelAnimationFrame(raf); vid.pause() }
+    }
 
     playIntervalRef.current = setInterval(() => {
       const next = frameIdxRef.current + 1
@@ -469,13 +532,18 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     }, 1000 / fps)
 
     return () => { if (playIntervalRef.current) clearInterval(playIntervalRef.current) }
-  }, [playing])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, viewMode])
 
   // Sync all non-skeleton UI to a given frame (used on scrub/step — not during playback)
   const syncUI = useCallback((n: number) => {
     const data = dataRef.current
     if (!data) return
     const f = data.frames[n]
+    // Scrub/adim/pencere-atlama: annotate'li video duraklatilmissa ayni ana tasi
+    // (oynatma sirasinda video zaten ana saat — geri yazma yapma, titretir).
+    const vid = annotatedVideoRef.current
+    if (vid && vid.paused) vid.currentTime = f.t
     anglePanelRef.current?.update(f, n)
     if (scrubberRef.current) scrubberRef.current.value = String(n)
     if (timeDisplayRef.current) timeDisplayRef.current.textContent = `${f.t.toFixed(2)}s / ${data.meta.duration.toFixed(2)}s · ${data.meta.fps.toFixed(0)} fps`
@@ -551,6 +619,35 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
     }
     return { anomalyMap: perJoint }
   }, [data])
+
+  // "En belirgin sapma anları" — anomali karelerini medyandan sapma büyüklüğüne göre sırala,
+  // aynı eklemde ±15 kare içindeki tekrarları ele (bir sapma olayı bir kez listelensin), ilk 5.
+  const anomalyMoments = useMemo(() => {
+    if (!data) return []
+    const out: { joint: string; frameIdx: number; t: number; value: number; deviation: number }[] = []
+    for (const [joint, idxSet] of anomalyMap) {
+      const vals = data.frames
+        .map(f => (f.angles as Record<string, number>)[joint])
+        .filter(v => v != null && !isNaN(v))
+        .sort((a, b) => a - b)
+      if (vals.length === 0) continue
+      const median = vals[Math.floor(vals.length / 2)]
+      const cand = [...idxSet]
+        .map(i => {
+          const v = (data.frames[i].angles as Record<string, number>)[joint]
+          return { joint, frameIdx: i, t: data.frames[i].t, value: v, deviation: v - median }
+        })
+        .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation))
+      const picked: typeof cand = []
+      for (const c of cand) {
+        if (picked.some(pk => Math.abs(pk.frameIdx - c.frameIdx) <= 15)) continue
+        picked.push(c)
+        if (picked.length >= 3) break
+      }
+      out.push(...picked)
+    }
+    return out.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation)).slice(0, 5)
+  }, [data, anomalyMap])
 
   const phaseDist = useMemo(() => {
     if (!data) return []
@@ -647,16 +744,85 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
         </div>
       ) : data && frame ? (
         <>
+          {/* Özet şeridi — tek bakışta durum: hızlı istatistik çipleri + uyarı sayacı
+              (tıklayınca Geri Bildirim sekmesi açılır). Sadece mevcut metrikler gösterilir. */}
+          <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-slate-800/70 bg-slate-900/40 overflow-x-auto">
+            {(() => {
+              const sm = data.summary
+              const chip = (label: string, value: string) => (
+                <span key={label} className="flex items-baseline gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-slate-800/70 border border-slate-700/50 whitespace-nowrap">
+                  <span className="text-slate-500">{label}</span>
+                  <span className="font-mono font-bold text-slate-200">{value}</span>
+                </span>
+              )
+              const chips: React.ReactNode[] = []
+              if (sm.walking_speed != null) chips.push(chip('Hız', `${(sm.walking_speed / 1000).toFixed(2)} m/s`))
+              if (sm.cadence != null) chips.push(chip('Kadans', `${sm.cadence.toFixed(0)} adım/dk`))
+              if (sm.stride_length_mean != null) chips.push(chip('Adım', `${(sm.stride_length_mean / 1000).toFixed(2)} m`))
+              if (sm.step_time_lr_diff_pct != null) chips.push(chip('Sol/Sağ Fark', `%${sm.step_time_lr_diff_pct.toFixed(0)}`))
+              else if (sm.knee_rom_lr_diff != null) chips.push(chip('Diz Simetri', `${sm.knee_rom_lr_diff.toFixed(1)}°`))
+              if (sm.valid_frame_ratio != null) chips.push(chip('Geçerli Kare', `%${(sm.valid_frame_ratio * 100).toFixed(0)}`))
+              const nWarn = (data.feedback ?? []).filter(f => f.type === 'warning').length
+              if (nWarn > 0) {
+                chips.push(
+                  <button
+                    key="warn"
+                    type="button"
+                    onClick={() => anglePanelRef.current?.openTab('feedback')}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
+                    title="Geri Bildirim sekmesini aç"
+                  >
+                    ⚠ {nWarn} uyarı
+                  </button>
+                )
+              }
+              return chips
+            })()}
+          </div>
           <div className="flex flex-1 min-h-0">
-            <div className="flex-1 min-w-0">
-              <Skeleton3D
-                ref={skeletonRef}
-                joints={frame.joints}
-                jointNames={data.joint_names}
-                edges={data.edges}
-                angles={frame.angles as unknown as Record<string, number>}
-                flat={isHrnetStgcn}
-              />
+            <div className="flex-1 min-w-0 relative flex">
+              {viewMode === 'both' && video.annotated_url && (
+                <div className="flex-1 min-w-0 bg-black flex items-center justify-center border-r border-slate-800">
+                  {/* preload=auto: scrub sirasinda currentTime atamalarinin aninda kare
+                      gostermesi icin. muted: otomatik oynatma kisitlarina takilmasin. */}
+                  <video
+                    ref={annotatedVideoRef}
+                    src={video.annotated_url}
+                    muted
+                    playsInline
+                    preload="auto"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <Skeleton3D
+                  ref={skeletonRef}
+                  joints={frame.joints}
+                  jointNames={data.joint_names}
+                  edges={data.edges}
+                  angles={frame.angles as unknown as Record<string, number>}
+                  flat={isHrnetStgcn}
+                />
+              </div>
+              {video.annotated_url && (
+                <div className="absolute top-2 left-2 flex gap-1 z-10">
+                  {([['both', 'Video + İskelet'], ['skeleton', 'Sadece İskelet']] as const).map(([m, label]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => { setPlaying(false); setViewMode(m) }}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
+                        viewMode === m
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <AnglePanel
               initialFrame={frame}
@@ -664,6 +830,15 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
               frameCount={data.meta.frame_count}
               panelRef={anglePanelRef}
               feedback={data.feedback}
+              anomalyMoments={anomalyMoments}
+              onJumpToFrame={n => {
+                setPlaying(false)
+                frameIdxRef.current = n
+                const f = dataRef.current?.frames[n]
+                if (f) skeletonRef.current?.updateFrame(f.joints, f.angles as unknown as Record<string, number>)
+                syncUI(n)
+                setFrameIdx(n)
+              }}
             />
           </div>
 
