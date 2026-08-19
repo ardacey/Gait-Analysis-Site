@@ -624,7 +624,7 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
   // aynı eklemde ±15 kare içindeki tekrarları ele (bir sapma olayı bir kez listelensin), ilk 5.
   const anomalyMoments = useMemo(() => {
     if (!data) return []
-    const out: { joint: string; frameIdx: number; t: number; value: number; deviation: number }[] = []
+    const out: AnomalyMoment[] = []
     for (const [joint, idxSet] of anomalyMap) {
       const vals = data.frames
         .map(f => (f.angles as Record<string, number>)[joint])
@@ -632,13 +632,13 @@ export function AnalysisViewer({ video, onClose }: AnalysisViewerProps) {
         .sort((a, b) => a - b)
       if (vals.length === 0) continue
       const median = vals[Math.floor(vals.length / 2)]
-      const cand = [...idxSet]
+      const cand: AnomalyMoment[] = [...idxSet]
         .map(i => {
           const v = (data.frames[i].angles as Record<string, number>)[joint]
           return { joint, frameIdx: i, t: data.frames[i].t, value: v, deviation: v - median }
         })
         .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation))
-      const picked: typeof cand = []
+      const picked: AnomalyMoment[] = []
       for (const c of cand) {
         if (picked.some(pk => Math.abs(pk.frameIdx - c.frameIdx) <= 15)) continue
         picked.push(c)
