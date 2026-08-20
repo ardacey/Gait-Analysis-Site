@@ -552,7 +552,7 @@ function AnglePanel({
       </div>
 
       {/* SABİT KARAR KARTI — bölmelerden bağımsız, her zaman görünür */}
-      {(classification || explanation) && (
+      {classification && (
         <div className="px-3 pb-2 shrink-0">
           <div className={`rounded-xl border px-3 py-2.5 ${
             positive ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-red-950/25 border-red-900/50'}`}>
@@ -565,33 +565,6 @@ function AnglePanel({
                   <span className={`text-sm font-semibold ${positive ? 'text-emerald-300' : 'text-red-300'}`}>{clsText}</span>
                 </span>
                 <span className="text-xs font-mono text-slate-400">%{(classification.confidence * 100).toFixed(0)}</span>
-              </div>
-            )}
-
-            {explanation && explanation.joints.length > 0 && (
-              <div className="mt-2.5">
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                  {lang === 'en' ? 'Driving Regions' : 'Sürükleyen Bölgeler'}
-                </div>
-                <div className="space-y-1">
-                  {(() => {
-                    const grouped = groupExplanation(explanation.joints).slice(0, 3)
-                    const max = grouped[0]?.delta || 1
-                    return grouped.map(j => (
-                      <div key={j.name} className="flex items-center gap-2">
-                        <span className="w-20 shrink-0 text-[10px] text-slate-400 truncate">
-                          {(lang === 'en' ? NODE_EN[j.name] : NODE_TR[j.name]) ?? j.name}
-                        </span>
-                        <div className="flex-1 h-1.5 rounded bg-slate-800/80 overflow-hidden">
-                          <div
-                            className={`h-full ${j.name.startsWith('L_') ? 'bg-blue-500' : j.name.startsWith('R_') ? 'bg-red-500' : 'bg-slate-400'}`}
-                            style={{ width: `${(j.delta / max) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  })()}
-                </div>
               </div>
             )}
 
@@ -631,6 +604,38 @@ function AnglePanel({
         {/* BULGULAR */}
         {tab === 'findings' && (
           <div className="flex flex-col gap-3">
+            {explanation && explanation.joints.length > 0 && (
+              <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
+                  {lang === 'en' ? 'Regions Driving the Decision' : 'Kararı Sürükleyen Bölgeler'}
+                </div>
+                <div className="px-3 py-2 space-y-1.5">
+                  {(() => {
+                    const grouped = groupExplanation(explanation.joints)
+                    const max = grouped[0]?.delta || 1
+                    return grouped.map(j => (
+                      <div key={j.name} className="flex items-center gap-2">
+                        <span className="w-28 shrink-0 text-xs text-slate-400">
+                          {(lang === 'en' ? NODE_EN[j.name] : NODE_TR[j.name]) ?? j.name}
+                        </span>
+                        <div className="flex-1 h-2 rounded bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full ${j.name.startsWith('L_') ? 'bg-blue-500' : j.name.startsWith('R_') ? 'bg-red-500' : 'bg-slate-400'}`}
+                            style={{ width: `${(j.delta / max) * 100}%` }}
+                          />
+                        </div>
+                        <span className="w-10 text-right text-[10px] font-mono text-slate-500">+{j.delta.toFixed(1)}</span>
+                      </div>
+                    ))
+                  })()}
+                  <p className="text-[10px] text-slate-500 pt-1">
+                    {lang === 'en'
+                      ? 'Occlusion analysis: how much each region pushed the model toward "abnormal". Research output, not a diagnosis.'
+                      : 'Occlusion analizi: her bölgenin modeli "anormal" kararına ne kadar ittiği. Araştırma çıktısıdır, tanı değildir.'}
+                  </p>
+                </div>
+              </div>
+            )}
             {anomalyMoments && anomalyMoments.length > 0 && (
               <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 overflow-hidden">
                 <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-800/40">
