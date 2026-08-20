@@ -8,7 +8,7 @@ import supabase from '../../lib/supabaseClient'
 import { GaitFeedback } from '../../components/analysis/GaitFeedback'
 import { Skeleton3D, type Skeleton3DHandle } from './Skeleton3D'
 import { AnglesGraph } from './AnglesGraph'
-import { getAngleColor } from '../../lib/angleRanges'
+import { getAngleColor, ANGLE_RANGES } from '../../lib/angleRanges'
 import { useLang } from '../../lib/i18n'
 
 interface AnalysisViewerProps {
@@ -429,7 +429,12 @@ type PanelTab = 'angles' | 'metrics' | 'feedback'
 interface AnglePanelHandle { update: (f: AnalysisFrame, frameIdx: number) => void; openTab: (t: PanelTab) => void }
 
 
-interface AnomalyMoment { joint: string; frameIdx: number; t: number; value: number; deviation: number }
+interface AnomalyMoment {
+  joint: string; frameIdx: number; t: number; value: number
+  /** outlier: video medyanından sapma; clinical: klinik bandın DIŞINA taşma miktarı (işaretli) */
+  deviation: number
+  kind: 'outlier' | 'clinical'
+}
 
 // Açı kartı mini eğrisi — tüm videonun o eklem serisi (statik, 0-200° bandı, artıklar kırpık).
 function Sparkline({ values }: { values: number[] }) {
@@ -635,7 +640,11 @@ function AnglePanel({
                       type="button"
                       onClick={() => onJumpToFrame?.(m.frameIdx)}
                       className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/70 transition-colors text-left"
-                      title="O ana git"
+                      title={m.kind === 'clinical' && ANGLE_RANGES[m.joint]
+                        ? (lang === 'en'
+                            ? `Outside the clinical range (${ANGLE_RANGES[m.joint].low}-${ANGLE_RANGES[m.joint].high}°) — click to jump`
+                            : `Klinik normal aralığın (${ANGLE_RANGES[m.joint].low}-${ANGLE_RANGES[m.joint].high}°) dışında — tıkla: o ana git`)
+                        : (lang === 'en' ? "Deviates from this video's own pattern — click to jump" : 'Videonun kendi örüntüsünden sapıyor — tıkla: o ana git')}
                     >
                       <span className="text-xs text-slate-300">{(lang === 'en' ? ANGLE_LABELS_EN[m.joint] : undefined) ?? ANGLE_LABELS[m.joint] ?? m.joint}</span>
                       <span className="text-[11px] font-mono text-slate-400">
@@ -848,8 +857,14 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
 
   // perJoint: her joint için anomali frame index seti (grafik için)
   // anyJoint: herhangi bir joint'te anomali olan frame'ler (slider için)
-  const { anomalyMap } = useMemo(() => {
-    const empty = { anomalyMap: new Map<string, Set<number>>() }
+  // İki tür sapma: (a) video-İÇİ istatistiksel aykırı (IQR çiti) — epizodik olaylar
+  // (takılma, takip artefaktı); (b) KLİNİK normal aralık dışı (angleRanges) — kalıcı patoloji.
+  // (a) tek başına yetmiyordu: Parkinson gibi baştan sona tekdüze anormal yürüyüşlerde video
+  // kendi içinde çok düzenli olduğu için hiçbir kare kendi çitinin dışına çıkmıyor, liste boş
+  // kalıyordu. Grafikteki kırmızı noktalar (anomalyMap) yalnızca (a); "sapma anları" listesi
+  // ikisini birden kullanıyor.
+  const { anomalyMap, clinicalMap } = useMemo(() => {
+    const empty = { anomalyMap: new Map<string, Set<number>>(), clinicalMap: new Map<string, Set<number>>() }
     if (!data || data.frames.length < 8) return empty
     const keys = Object.keys(data.frames[0].angles) as string[]
     const perJoint = new Map<string, Set<number>>()
@@ -876,7 +891,21 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
       })
       if (jointSet.size > 0) perJoint.set(key, jointSet)
     }
-    return { anomalyMap: perJoint }
+
+    // (b) klinik bant dışı — angleRanges'in low/high (kırmızı) sınırları
+    const perJointClinical = new Map<string, Set<number>>()
+    for (const key of keys) {
+      const r = ANGLE_RANGES[key]
+      if (!r) continue
+      const set = new Set<number>()
+      data.frames.forEach((f, i) => {
+        if (f.gait_phase === 'n/a' && data.frames.some(fr => fr.gait_phase !== 'n/a')) return
+        const val = (f.angles as Record<string, number>)[key]
+        if (val != null && !isNaN(val) && (val < r.low || val > r.high)) set.add(i)
+      })
+      if (set.size > 0) perJointClinical.set(key, set)
+    }
+    return { anomalyMap: perJoint, clinicalMap: perJointClinical }
   }, [data])
 
   // "En belirgin sapma anları" — anomali karelerini medyandan sapma büyüklüğüne göre sırala,
@@ -884,17 +913,15 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
   const anomalyMoments = useMemo(() => {
     if (!data) return []
     const out: AnomalyMoment[] = []
-    for (const [joint, idxSet] of anomalyMap) {
-      const vals = data.frames
-        .map(f => (f.angles as Record<string, number>)[joint])
-        .filter(v => v != null && !isNaN(v))
-        .sort((a, b) => a - b)
-      if (vals.length === 0) continue
-      const median = vals[Math.floor(vals.length / 2)]
+
+    /** Bir eklemin aday karelerini sapmaya göre sırala, ±15 kare içindeki tekrarları ele
+     *  (aynı olay bir kez listelensin), eklem başına en fazla 3 tane al. */
+    const pickTop = (idxSet: Set<number>, joint: string, kind: AnomalyMoment['kind'],
+                     devOf: (v: number) => number) => {
       const cand: AnomalyMoment[] = [...idxSet]
         .map(i => {
           const v = (data.frames[i].angles as Record<string, number>)[joint]
-          return { joint, frameIdx: i, t: data.frames[i].t, value: v, deviation: v - median }
+          return { joint, frameIdx: i, t: data.frames[i].t, value: v, deviation: devOf(v), kind }
         })
         .sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation))
       const picked: AnomalyMoment[] = []
@@ -903,10 +930,35 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
         picked.push(c)
         if (picked.length >= 3) break
       }
-      out.push(...picked)
+      return picked
     }
-    return out.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation)).slice(0, 5)
-  }, [data, anomalyMap])
+
+    // (a) video-içi aykırılar — medyandan sapma
+    for (const [joint, idxSet] of anomalyMap) {
+      const vals = data.frames
+        .map(f => (f.angles as Record<string, number>)[joint])
+        .filter(v => v != null && !isNaN(v))
+        .sort((a, b) => a - b)
+      if (vals.length === 0) continue
+      const median = vals[Math.floor(vals.length / 2)]
+      out.push(...pickTop(idxSet, joint, 'outlier', v => v - median))
+    }
+
+    // (b) klinik bant dışı — banda olan taşma miktarı ("normal aralığın X° altında")
+    for (const [joint, idxSet] of clinicalMap) {
+      const r = ANGLE_RANGES[joint]
+      if (!r) continue
+      out.push(...pickTop(idxSet, joint, 'clinical', v => (v < r.low ? v - r.low : v - r.high)))
+    }
+
+    // aynı eklemde aynı ana denk gelen iki tür varsa klinik olanı tut (daha yorumlanabilir)
+    const dedup: AnomalyMoment[] = []
+    for (const m of out.sort((a, b) => (a.kind === 'clinical' ? -1 : 1) - (b.kind === 'clinical' ? -1 : 1))) {
+      if (dedup.some(d => d.joint === m.joint && Math.abs(d.frameIdx - m.frameIdx) <= 15)) continue
+      dedup.push(m)
+    }
+    return dedup.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation)).slice(0, 5)
+  }, [data, anomalyMap, clinicalMap])
 
   const phaseDist = useMemo(() => {
     if (!data) return []
