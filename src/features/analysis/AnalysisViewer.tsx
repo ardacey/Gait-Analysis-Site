@@ -349,7 +349,7 @@ function drawAngleChart(
   return canvas.toDataURL('image/png')
 }
 
-function generateReport(data: AnalysisData, filename: string) {
+function generateReport(data: AnalysisData, filename: string, doctorNote?: { text: string; by?: string | null }) {
   const w = window.open('', '_blank', 'width=820,height=1000')
   if (!w) { alert('Açılır pencere engellendi.'); return }
   const phaseDist: Record<string, number> = {}
@@ -391,6 +391,17 @@ function generateReport(data: AnalysisData, filename: string) {
     { key: 'L Hip', color: '#34d399', label: 'Sol Kalça' },
     { key: 'R Hip', color: '#059669', label: 'Sağ Kalça' },
   ])
+  // Occlusion açıklaması — modelin kararını sürükleyen bölgeler (bkz. explain_video)
+  const expl = data.classification?.explanation
+  const explSection = expl && expl.joints.length > 0
+    ? `<h2>Kararı Sürükleyen Bölgeler</h2><table><thead><tr><th>Bölge</th><th>Katkı</th></tr></thead><tbody>${
+        groupExplanation(expl.joints).map(j =>
+          `<tr><td>${NODE_TR[j.name] ?? j.name}</td><td>+${j.delta.toFixed(2)}</td></tr>`).join('')
+      }</tbody></table><p class="note" style="margin-top:6px;border:0;padding:0">Occlusion analizi: her bölgenin modeli "anormal" kararına ne kadar ittiği (araştırma çıktısıdır, tanı değildir).</p>`
+    : ''
+  const noteSection = doctorNote?.text
+    ? `<h2>Doktor Değerlendirmesi${doctorNote.by ? ` (${doctorNote.by})` : ''}</h2><p style="margin-top:8px;line-height:1.5">${doctorNote.text.replace(/</g, '&lt;')}</p>`
+    : ''
   const now = new Date().toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' })
   w.document.write(`<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Yürüyüş Analiz Raporu</title>
 <style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1e293b;font-size:13px}h1{background:#1d4ed8;color:white;margin:-24px -24px 24px;padding:20px 24px;font-size:18px}h2{font-size:14px;color:#1d4ed8;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-top:24px}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#f1f5f9;text-align:left;padding:6px 10px;font-size:12px}td{padding:5px 10px;border-bottom:1px solid #e2e8f0}tr:last-child td{border-bottom:none}.meta{display:flex;gap:40px;background:#f8fafc;padding:12px 16px;border-radius:6px;margin-bottom:8px}.meta-item label{font-size:11px;color:#64748b;display:block}.meta-item span{font-weight:bold}.note{margin-top:32px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}@media print{body{padding:12px}h1{margin:-12px -12px 16px}}</style>
@@ -398,7 +409,9 @@ function generateReport(data: AnalysisData, filename: string) {
 <h1>Yürüyüş Analiz Raporu</h1>
 <div class="meta"><div class="meta-item"><label>Video</label><span>${filename}</span></div><div class="meta-item"><label>Süre</label><span>${data.meta.duration.toFixed(2)}s</span></div><div class="meta-item"><label>FPS</label><span>${data.meta.fps.toFixed(0)}</span></div><div class="meta-item"><label>Rapor Tarihi</label><span>${now}</span></div></div>
 ${clsBanner}
+${noteSection}
 ${feedbackSection}
+${explSection}
 <h2>Temporal-Spatial Parametreler</h2><table><thead><tr><th>Parametre</th><th>Değer</th></tr></thead><tbody>${metricRows}</tbody></table>
 <h2>Eklem Hareket Açıklığı (ROM)</h2><table><thead><tr><th>Eklem</th><th>Min</th><th>Max</th><th>Ortalama</th><th>ROM</th></tr></thead><tbody>${romRows}</tbody></table>
 ${kneeChart ? `<h2>Diz Açısı Eğrisi</h2><img src="${kneeChart}" style="width:100%;border:1px solid #e2e8f0;border-radius:6px" alt="Diz açısı grafiği" />` : ''}
@@ -975,7 +988,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
         </div>
         <div className="flex items-center gap-2">
           {data && (
-            <button type="button" onClick={() => generateReport(data, video.file_name)}
+            <button type="button" onClick={() => generateReport(data, video.file_name, video.doctor_note ? { text: video.doctor_note, by: video.doctor_note_by } : undefined)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-colors">
               <FileText className="w-3.5 h-3.5" /> {t('analysis.report')}
             </button>
