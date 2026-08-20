@@ -8,6 +8,7 @@ import {
 import type { AnalysisMethod, UserRole, VideoRecord } from '../../types'
 import { RecordingGuide } from './RecordingGuide'
 import { useLang, LangToggle } from '../../lib/i18n'
+import { buildMetricsCsv, downloadCsv } from '../../lib/exportCsv'
 
 interface DashboardProps {
   role: UserRole
@@ -100,6 +101,7 @@ export function Dashboard({
   const [statusFilter, setStatusFilter] = useState<'all' | 'done' | 'processing' | 'queued' | 'error'>('all')
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'status'>('newest')
+  const [exporting, setExporting] = useState(false)
 
   const STATUS_ORDER: Record<string, number> = { processing: 0, queued: 1, error: 2, done: 3 }
   const filteredVideos = videos
@@ -414,6 +416,32 @@ export function Dashboard({
               )}
             </h3>
 
+            <div className="flex items-center gap-2 flex-wrap">
+              {videos.some(v => v.job_status === 'done') && (
+                <button
+                  type="button"
+                  disabled={exporting}
+                  onClick={async () => {
+                    setExporting(true)
+                    try {
+                      const { csv, exported, skipped } = await buildMetricsCsv(filteredVideos)
+                      if (exported === 0) {
+                        alert(L('Dışa aktarılacak tamamlanmış analiz yok.', 'No completed analyses to export.'))
+                      } else {
+                        downloadCsv(csv, `gait-metrics-${new Date().toISOString().slice(0, 10)}.csv`)
+                        if (skipped > 0) alert(L(`${skipped} kayıt okunamadı, atlandı.`, `${skipped} record(s) could not be read and were skipped.`))
+                      }
+                    } finally {
+                      setExporting(false)
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  title={L('Görünen tamamlanmış analizlerin tüm metriklerini tek CSV olarak indir', 'Download all metrics of the listed completed analyses as one CSV')}
+                >
+                  <Download className="w-3 h-3" /> {exporting ? L('Hazırlanıyor…', 'Preparing…') : L('Metrikleri Dışa Aktar', 'Export Metrics')}
+                </button>
+              )}
+            </div>
             {videos.length > 3 && (
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1">

@@ -41,6 +41,7 @@ export type Database = {
           doctor_note: string | null
           doctor_note_by: string | null
           doctor_note_at: string | null
+          model_version: string | null
         }
         Insert: {
           id?: number
@@ -60,6 +61,7 @@ export type Database = {
           doctor_note?: string | null
           doctor_note_by?: string | null
           doctor_note_at?: string | null
+          model_version?: string | null
         }
         Update: {
           id?: number
@@ -79,6 +81,7 @@ export type Database = {
           doctor_note?: string | null
           doctor_note_by?: string | null
           doctor_note_at?: string | null
+          model_version?: string | null
         }
         Relationships: []
       }

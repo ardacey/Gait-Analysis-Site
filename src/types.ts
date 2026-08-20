@@ -20,6 +20,9 @@ export interface VideoRecord {
   analysis_method: AnalysisMethod
   stgcn_label: StgcnLabel | null
   stgcn_confidence: number | null
+  // Analizi üreten model/pipeline sürümü (worker yazar) — hangi kaydın hangi sürümle
+  // üretildiğini izlemek için; eski kayıtlarda null.
+  model_version?: string | null
   // Doktor değerlendirme notu (2026-08-19): doktor analiz ekranından yazar, hasta okur.
   doctor_note?: string | null
   doctor_note_by?: string | null

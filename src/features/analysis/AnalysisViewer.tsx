@@ -349,7 +349,7 @@ function drawAngleChart(
   return canvas.toDataURL('image/png')
 }
 
-function generateReport(data: AnalysisData, filename: string, doctorNote?: { text: string; by?: string | null }) {
+function generateReport(data: AnalysisData, filename: string, doctorNote?: { text: string; by?: string | null }, modelVersion?: string | null) {
   const w = window.open('', '_blank', 'width=820,height=1000')
   if (!w) { alert('Açılır pencere engellendi.'); return }
   const phaseDist: Record<string, number> = {}
@@ -407,7 +407,7 @@ function generateReport(data: AnalysisData, filename: string, doctorNote?: { tex
 <style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1e293b;font-size:13px}h1{background:#1d4ed8;color:white;margin:-24px -24px 24px;padding:20px 24px;font-size:18px}h2{font-size:14px;color:#1d4ed8;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-top:24px}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#f1f5f9;text-align:left;padding:6px 10px;font-size:12px}td{padding:5px 10px;border-bottom:1px solid #e2e8f0}tr:last-child td{border-bottom:none}.meta{display:flex;gap:40px;background:#f8fafc;padding:12px 16px;border-radius:6px;margin-bottom:8px}.meta-item label{font-size:11px;color:#64748b;display:block}.meta-item span{font-weight:bold}.note{margin-top:32px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}@media print{body{padding:12px}h1{margin:-12px -12px 16px}}</style>
 </head><body>
 <h1>Yürüyüş Analiz Raporu</h1>
-<div class="meta"><div class="meta-item"><label>Video</label><span>${filename}</span></div><div class="meta-item"><label>Süre</label><span>${data.meta.duration.toFixed(2)}s</span></div><div class="meta-item"><label>FPS</label><span>${data.meta.fps.toFixed(0)}</span></div><div class="meta-item"><label>Rapor Tarihi</label><span>${now}</span></div></div>
+<div class="meta"><div class="meta-item"><label>Video</label><span>${filename}</span></div><div class="meta-item"><label>Süre</label><span>${data.meta.duration.toFixed(2)}s</span></div><div class="meta-item"><label>FPS</label><span>${data.meta.fps.toFixed(0)}</span></div><div class="meta-item"><label>Rapor Tarihi</label><span>${now}</span></div>${modelVersion ? `<div class="meta-item"><label>Model Sürümü</label><span>${modelVersion}</span></div>` : ''}</div>
 ${clsBanner}
 ${noteSection}
 ${feedbackSection}
@@ -965,6 +965,14 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
         <div className="flex items-center gap-3">
           <Activity className="w-5 h-5 text-blue-400" />
           <span className="font-bold text-slate-200 truncate max-w-[300px]">{video.file_name}</span>
+          {video.model_version && (
+            <span
+              className="hidden sm:inline text-[10px] font-mono text-slate-600 border border-slate-800 rounded px-1.5 py-0.5"
+              title={lang === 'en' ? 'Model / pipeline version that produced this analysis' : 'Bu analizi üreten model / pipeline sürümü'}
+            >
+              {video.model_version}
+            </span>
+          )}
           {phaseInfo && (
             <span ref={phaseBadgeRef} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${phaseInfo.color}`}>
               {phaseInfo.label}
@@ -988,7 +996,7 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
         </div>
         <div className="flex items-center gap-2">
           {data && (
-            <button type="button" onClick={() => generateReport(data, video.file_name, video.doctor_note ? { text: video.doctor_note, by: video.doctor_note_by } : undefined)}
+            <button type="button" onClick={() => generateReport(data, video.file_name, video.doctor_note ? { text: video.doctor_note, by: video.doctor_note_by } : undefined, video.model_version)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-colors">
               <FileText className="w-3.5 h-3.5" /> {t('analysis.report')}
             </button>
