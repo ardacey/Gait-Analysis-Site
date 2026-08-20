@@ -45,6 +45,7 @@ function App() {
     handleFileChange,
     handleUploadFiles,
     handleDelete,
+    handleReanalyze,
   } = useVideos({ username, role, isLoggedIn, onToast: showToast })
 
   return (
@@ -81,7 +82,7 @@ function App() {
         <Dashboard
           role={role} username={username} onLogout={logout}
           videos={videos} loadingVideos={loadingVideos}
-          isUploading={isUploading} status={status} handleFileChange={handleFileChange} handleUploadFiles={handleUploadFiles}
+          isUploading={isUploading} status={status} handleFileChange={handleFileChange} handleUploadFiles={handleUploadFiles} handleReanalyze={handleReanalyze}
           setActiveVideo={setActiveVideo} confirmDelete={setVideoToDelete}
           openAnalysis={setAnalysisVideo}
           onOpenLive={() => setLivePracticeOpen(true)}

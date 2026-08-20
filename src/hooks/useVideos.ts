@@ -256,6 +256,28 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
     [handleUploadFiles]
   )
 
+  /** Kaydı güncel pipeline ile yeniden işlet — mevcut analizlerin çoğu eski worker
+   *  sürümleriyle üretildi (faz etiketleri, occlusion açıklaması, geçerlilik kapıları yok);
+   *  bu, videoyu tekrar yüklemeden kuyruğa geri koyar. analysis_method da güncel yola
+   *  sabitlenir: MeTRAbs worker'ı emekli, eski 'metrabs' kayıtları aksi halde kuyrukta kalır. */
+  const handleReanalyze = useCallback(async (video: VideoRecord) => {
+    if (!client) return
+    const { error } = await client.from('videos').update({
+      job_status: 'queued',
+      analysis_method: 'hrnet_stgcn',
+    }).eq('id', video.id)
+    if (error) {
+      onToastRef.current('Yeniden analiz başlatılamadı.', 'error')
+      return
+    }
+    setVideos(prev => prev.map(v => v.id === video.id
+      ? { ...v, job_status: 'queued', analysis_method: 'hrnet_stgcn' as AnalysisMethod }
+      : v))
+    // tamamlanma toast'ı yeniden çıksın diye "zaten bitmişti" kaydından düş
+    initialDoneIds.current.delete(video.id)
+    onToastRef.current('Video yeniden analiz kuyruğuna alındı.', 'info')
+  }, [client])
+
   const handleDelete = useCallback(async () => {
     if (!videoToDelete || !client || !supabaseBucket) return
     try {
@@ -307,5 +329,6 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
     handleFileChange,
     handleUploadFiles,
     handleDelete,
+    handleReanalyze,
   }
 }

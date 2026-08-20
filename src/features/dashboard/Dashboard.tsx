@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import {
   Trash2, Play, Upload, User, LogOut, Stethoscope, Activity, UserPlus,
-  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film, Camera,
+  Download, BarChart2, Clock, CheckCircle2, XCircle, Loader2, Film, Camera, RefreshCw,
 } from 'lucide-react'
 
 import type { AnalysisMethod, UserRole, VideoRecord } from '../../types'
@@ -19,6 +19,7 @@ interface DashboardProps {
   status: string
   handleFileChange: (method: AnalysisMethod) => (e: React.ChangeEvent<HTMLInputElement>) => void
   handleUploadFiles: (files: File[], method: AnalysisMethod) => void
+  handleReanalyze: (video: VideoRecord) => void
   setActiveVideo: (url: string) => void
   confirmDelete: (video: VideoRecord) => void
   openAnalysis: (video: VideoRecord) => void
@@ -83,7 +84,7 @@ const STATUS_ACCENT: Record<string, string> = {
 export function Dashboard({
   role, username, onLogout,
   videos, loadingVideos,
-  isUploading, status, handleFileChange, handleUploadFiles,
+  isUploading, status, handleFileChange, handleUploadFiles, handleReanalyze,
   setActiveVideo, confirmDelete, openAnalysis, onOpenLive,
 }: DashboardProps) {
 
@@ -224,6 +225,17 @@ export function Dashboard({
                           <div className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl bg-slate-50 text-slate-400 border border-slate-100 cursor-default">
                             <BarChart2 className="w-3 h-3" /> {L('Analiz', 'Analysis')}
                           </div>
+                        )}
+
+                        {(st === 'done' || st === 'error') && (
+                          <button
+                            type="button"
+                            onClick={() => void handleReanalyze(video)}
+                            className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title={L('Güncel modelle yeniden analiz et', 'Re-analyze with the current model')}
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
                         )}
 
                         <button
