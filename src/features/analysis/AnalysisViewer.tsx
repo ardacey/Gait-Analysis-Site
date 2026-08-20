@@ -671,14 +671,16 @@ export function AnalysisViewer({ video, role, username, onClose }: AnalysisViewe
   const saveNote = async () => {
     if (!supabase) return
     setNoteSaving(true)
-    const { error: err } = await supabase.from('videos').update({
+    // .select() ŞART — bkz. useVideos.handleReanalyze: RLS engellediğinde hata değil,
+    // 0 satır döner; kontrol etmezsek "kaydedildi" der ama not kaybolur.
+    const { data, error: err } = await supabase.from('videos').update({
       doctor_note: note.trim() || null,
       doctor_note_by: username,
       doctor_note_at: new Date().toISOString(),
-    }).eq('id', video.id)
+    }).eq('id', video.id).select()
     setNoteSaving(false)
-    if (err) {
-      alert(`Not kaydedilemedi: ${err.message}`)
+    if (err || !data || data.length === 0) {
+      alert(err ? `Not kaydedilemedi: ${err.message}` : 'Not kaydedilemedi — kayıt güncellenemedi (yetki/RLS).')
     } else {
       setNoteSavedAt(new Date().toISOString())
       // liste görünümündeki kayıt da tazelensin diye obje üzerinde güncelle (referans paylaşımlı)

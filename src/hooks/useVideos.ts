@@ -262,12 +262,16 @@ export function useVideos({ username, role, isLoggedIn, onToast }: UseVideosOpti
    *  sabitlenir: MeTRAbs worker'ı emekli, eski 'metrabs' kayıtları aksi halde kuyrukta kalır. */
   const handleReanalyze = useCallback(async (video: VideoRecord) => {
     if (!client) return
-    const { error } = await client.from('videos').update({
+    // .select() ŞART: RLS bir UPDATE'i engellediğinde Supabase HATA DÖNDÜRMEZ, sadece 0 satır
+    // günceller — dönen satırı kontrol etmezsek kullanıcıya yanlışlıkla "başladı" deriz.
+    const { data, error } = await client.from('videos').update({
       job_status: 'queued',
       analysis_method: 'hrnet_stgcn',
-    }).eq('id', video.id)
-    if (error) {
-      onToastRef.current('Yeniden analiz başlatılamadı.', 'error')
+    }).eq('id', video.id).select()
+    if (error || !data || data.length === 0) {
+      onToastRef.current(
+        error ? 'Yeniden analiz başlatılamadı.' : 'Yeniden analiz başlatılamadı — kayıt güncellenemedi (yetki/RLS).',
+        'error')
       return
     }
     setVideos(prev => prev.map(v => v.id === video.id
